@@ -1,3 +1,5 @@
+import random
+
 import sklearn.preprocessing
 import utils
 import collections
@@ -8,8 +10,6 @@ import time
 import token
 import os
 import pickle
-import random
-
 
 class Dataset(object):
     """A class for handling data sets."""
@@ -27,8 +27,13 @@ class Dataset(object):
         line_count = -1
         tokens = []
         labels = []
+        poses = []
+        spaceses = []
         new_token_sequence = []
         new_label_sequence = []
+        new_pos_sequence = []
+        new_space_sequence = []
+        number_of_pos_classes = 0
         if dataset_filepath:
             f = codecs.open(dataset_filepath, 'r', 'UTF-8')
             for line in f:
@@ -38,16 +43,28 @@ class Dataset(object):
                     if len(new_token_sequence) > 0:
                         labels.append(new_label_sequence)
                         tokens.append(new_token_sequence)
+                        poses.append(new_pos_sequence)
+                        spaceses.append(new_space_sequence)
                         new_token_sequence = []
                         new_label_sequence = []
+                        new_pos_sequence = []
+                        new_space_sequence = []
                     continue
                 token = str(line[0])
+                pos = int(line[-3])
+                sp = int(line[-2])
+                if pos < 0:
+                    raise Exception
+                if pos > number_of_pos_classes:
+                    number_of_pos_classes = pos
                 label = str(line[-1])
                 token_count[token] += 1
                 label_count[label] += 1
 
                 new_token_sequence.append(token)
                 new_label_sequence.append(label)
+                new_pos_sequence.append(pos)
+                new_space_sequence.append(sp)
 
                 for character in token:
                     character_count[character] += 1
@@ -57,9 +74,10 @@ class Dataset(object):
             if len(new_token_sequence) > 0:
                 labels.append(new_label_sequence)
                 tokens.append(new_token_sequence)
+                poses.append(new_pos_sequence)
+                spaceses.append(new_space_sequence)
             f.close()
-        return labels, tokens, token_count, label_count, character_count
-
+        return labels, tokens, spaceses, poses, number_of_pos_classes + 1, token_count, label_count, character_count
 
     def _convert_to_indices(self, dataset_types):
         tokens = self.tokens
@@ -164,26 +182,32 @@ class Dataset(object):
 
         remap_to_unk_count_threshold = 1
         self.UNK_TOKEN_INDEX = 0
+        self.PADDING_TOKEN_INDEX = 0
+        self.PADDING_POS_INDEX = 0
         self.PADDING_CHARACTER_INDEX = 0
+        self.PADDING_LABEL_INDEX = 0
         self.tokens_mapped_to_unk = []
         self.UNK = 'UNK'
         self.unique_labels = []
         labels = {}
         tokens = {}
+        spaceses = {}
+        poses = {}
         label_count = {}
         token_count = {}
         character_count = {}
+        number_of_pos_classes = 0
         for dataset_type in ['train', 'valid', 'test', 'deploy']:
-            labels[dataset_type], tokens[dataset_type], token_count[dataset_type], label_count[dataset_type], character_count[dataset_type] \
+            labels[dataset_type], tokens[dataset_type], spaceses[dataset_type], poses[dataset_type], current_number_of_pos_classes, token_count[dataset_type], label_count[dataset_type], character_count[dataset_type] \
                 = self._parse_dataset(dataset_filepaths.get(dataset_type, None))
-
+            number_of_pos_classes = max(number_of_pos_classes, current_number_of_pos_classes)
             if self.verbose: print("dataset_type: {0}".format(dataset_type))
             if self.verbose: print("len(token_count[dataset_type]): {0}".format(len(token_count[dataset_type])))
 
         token_count['all'] = {}
         for token in list(token_count['train'].keys()) + list(token_count['valid'].keys()) + list(token_count['test'].keys()) + list(token_count['deploy'].keys()):
             token_count['all'][token] = token_count['train'][token] + token_count['valid'][token] + token_count['test'][token] + token_count['deploy'][token]
-        
+
         if parameters['load_all_pretrained_token_embeddings']:
             for token in token_to_vector:
                 if token not in token_count['all']:
@@ -331,8 +355,21 @@ class Dataset(object):
         self.labels = labels
 
         token_indices, label_indices, character_indices_padded, character_indices, token_lengths, characters, label_vector_indices = self._convert_to_indices(dataset_filepaths.keys())
-        
+        token_morpheme_indices = {}
+        for dataset_type in dataset_filepaths.keys():
+            token_morpheme_indices[dataset_type] = []
+            for pos in poses[dataset_type]:
+                pos_a = []
+                for e in pos:
+                    pos_a_b = [self.PADDING_POS_INDEX] * number_of_pos_classes
+                    pos_a_b[e] = 1
+                    pos_a.append(pos_a_b)
+                token_morpheme_indices[dataset_type].append(pos_a)
+
         self.token_indices = token_indices
+        self.token_morpheme_indices = token_morpheme_indices
+        self.space_indices = spaceses
+        self.number_of_pos_classes = number_of_pos_classes
         self.label_indices = label_indices
         self.character_indices_padded = character_indices_padded
         self.character_indices = character_indices
@@ -360,8 +397,10 @@ class Dataset(object):
         if self.verbose: print('self.unique_labels_of_interest: {0}'.format(self.unique_labels_of_interest))
         if self.verbose: print('self.unique_label_indices_of_interest: {0}'.format(self.unique_label_indices_of_interest))
 
+        self.max_token_size = 500
+
         elapsed_time = time.time() - start_time
         print('done ({0:.2f} seconds)'.format(elapsed_time))
-        
+
         return token_to_vector
 

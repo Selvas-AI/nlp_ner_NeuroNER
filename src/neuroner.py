@@ -1,4 +1,7 @@
 import matplotlib
+
+from batch_input_generator import BatchInputGenerator
+
 matplotlib.use('Agg')
 import train
 import dataset as ds
@@ -31,7 +34,6 @@ warnings.filterwarnings('ignore')
 
 
 class NeuroNER(object):
-    argument_default_value = 'argument_default_dummy_value_please_ignore_d41d8cd98f00b204e9800998ecf8427e'
     prediction_count = 0
 
     def _create_stats_graph_folder(self, parameters):
@@ -49,74 +51,82 @@ class NeuroNER(object):
         Load parameters from the ini file if specified, take into account any command line argument, and ensure that each parameter is cast to the correct type.
         Command line arguments take precedence over parameters specified in the parameter file.
         '''
-        parameters = {'pretrained_model_folder':'../trained_models/conll_2003_en',
-                      'dataset_text_folder':'../data/conll2003/en',
-                      'character_embedding_dimension':25,
-                      'character_lstm_hidden_state_dimension':25,
-                      'check_for_digits_replaced_with_zeros':True,
-                      'check_for_lowercase':True,
-                      'debug':False,
-                      'dropout_rate':0.5,
-                      'experiment_name':'test',
-                      'freeze_token_embeddings':False,
-                      'gradient_clipping_value':5.0,
-                      'learning_rate':0.005,
-                      'load_only_pretrained_token_embeddings':False,
-                      'load_all_pretrained_token_embeddings':False,
-                      'main_evaluation_mode':'conll',
-                      'maximum_number_of_epochs':100,
-                      'number_of_cpu_threads':8,
-                      'number_of_gpus':0,
-                      'optimizer':'sgd',
-                      'output_folder':'../output',
-                      'patience':10,
-                      'plot_format':'pdf',
-                      'reload_character_embeddings':True,
-                      'reload_character_lstm':True,
-                      'reload_crf':True,
-                      'reload_feedforward':True,
-                      'reload_token_embeddings':True,
-                      'reload_token_lstm':True,
-                      'remap_unknown_tokens_to_unk':True,
-                      'spacylanguage':'en',
-                      'tagging_format':'bioes',
-                      'token_embedding_dimension':100,
-                      'token_lstm_hidden_state_dimension':100,
-                      'token_pretrained_embedding_filepath':'../data/word_vectors/glove.6B.100d.txt',
-                      'tokenizer':'spacy',
-                      'train_model':True,
-                      'use_character_lstm':True,
-                      'use_crf':True,
-                      'use_pretrained_model':False,
-                      'verbose':False}
+        parameters = {'pretrained_model_folder': '../trained_models/conll_2003_en',
+                      'dataset_text_folder': '../data/conll2003/en',
+                      'character_embedding_dimension': 25,
+                      'character_lstm_hidden_state_dimension': 25,
+                      'check_for_digits_replaced_with_zeros': True,
+                      'check_for_lowercase': True,
+                      'debug': False,
+                      'dropout_rate': 0.5,
+                      'experiment_name': 'experiment',
+                      'freeze_token_embeddings': False,
+                      'gradient_clipping_value': 5.0,
+                      'learning_rate': 0.005,
+                      'load_only_pretrained_token_embeddings': False,
+                      'main_evaluation_mode': 'conll',
+                      'maximum_number_of_epochs': 100,
+                      'number_of_cpu_threads': 8,
+                      'number_of_gpus': 0,
+                      'optimizer': 'sgd',
+                      'output_folder': '../output',
+                      'patience': 10,
+                      'plot_format': 'pdf',
+                      'reload_character_embeddings': True,
+                      'reload_character_lstm': True,
+                      'reload_crf': True,
+                      'reload_feedforward': True,
+                      'reload_token_embeddings': True,
+                      'reload_token_lstm': True,
+                      'remap_unknown_tokens_to_unk': True,
+                      'spacylanguage': 'en',
+                      'tagging_format': 'bioes',
+                      'token_embedding_dimension': 100,
+                      'token_lstm_hidden_state_dimension': 100,
+                      'token_pretrained_embedding_filepath': '../data/word_vectors/glove.6B.100d.txt',
+                      'tokenizer': 'spacy',
+                      'train_model': True,
+                      'use_character_lstm': True,
+                      'use_crf': True,
+                      'use_pretrained_model': False,
+                      'verbose': False,
+                      'space_tag_include' : True,
+                      'morpheme_tag_include' : True,
+                      'skip_data_compatibility' : False,
+                      'use_bnlstm' : False,
+                      }
         # If a parameter file is specified, load it
         if len(parameters_filepath) > 0:
             conf_parameters = configparser.ConfigParser()
             conf_parameters.read(parameters_filepath)
             nested_parameters = utils.convert_configparser_to_dictionary(conf_parameters)
-            for k,v in nested_parameters.items():
+            for k, v in nested_parameters.items():
                 parameters.update(v)
-        # Ensure that any arguments the specified in the command line overwrite parameters specified in the parameter file
-        for k,v in arguments.items():
-            if arguments[k] != arguments['argument_default_value']:
-                parameters[k] = v
-        for k,v in parameters.items():
+        for k, v in parameters.items():
             v = str(v)
+            '''
             # If the value is a list delimited with a comma, choose one element at random.
             if ',' in v:
                 v = random.choice(v.split(','))
                 parameters[k] = v
+            '''
+            if ',' in v:
+                v = v.split(',')
             # Ensure that each parameter is cast to the correct type
-            if k in ['character_embedding_dimension','character_lstm_hidden_state_dimension','token_embedding_dimension',
-                     'token_lstm_hidden_state_dimension','patience','maximum_number_of_epochs','maximum_training_time','number_of_cpu_threads','number_of_gpus']:
-                parameters[k] = int(v)
+            if k in ['character_embedding_dimension', 'character_lstm_hidden_state_dimension', 'token_embedding_dimension',
+                     'token_lstm_hidden_state_dimension', 'patience', 'maximum_number_of_epochs', 'maximum_training_time', 'number_of_cpu_threads', 'number_of_gpus']:
+                if type(v) is list:
+                    parameters[k] = [int(e) for e in v]
+                else:
+                    parameters[k] = int(v)
             elif k in ['dropout_rate', 'learning_rate', 'gradient_clipping_value']:
                 parameters[k] = float(v)
             elif k in ['remap_unknown_tokens_to_unk', 'use_character_lstm', 'use_crf', 'train_model', 'use_pretrained_model', 'debug', 'verbose',
-                     'reload_character_embeddings', 'reload_character_lstm', 'reload_token_embeddings', 'reload_token_lstm', 'reload_feedforward', 'reload_crf',
-                     'check_for_lowercase', 'check_for_digits_replaced_with_zeros', 'freeze_token_embeddings', 'load_only_pretrained_token_embeddings', 'load_all_pretrained_token_embeddings']:
+                       'reload_character_embeddings', 'reload_character_lstm', 'reload_token_embeddings', 'reload_token_lstm', 'reload_feedforward', 'reload_crf',
+                       'check_for_lowercase', 'check_for_digits_replaced_with_zeros', 'freeze_token_embeddings', 'load_only_pretrained_token_embeddings', 'load_all_pretrained_token_embeddings',
+                       'skip_data_compatibility', 'morpheme_tag_include', 'space_tag_include', 'use_bnlstm']:
                 parameters[k] = distutils.util.strtobool(v)
-        # If loading pretrained model, set the model hyperparameters according to the pretraining parameters 
+        # If loading pretrained model, set the model hyperparameters according to the pretraining parameters
         if parameters['use_pretrained_model']:
             pretraining_parameters = self._load_parameters(parameters_filepath=os.path.join(parameters['pretrained_model_folder'], 'parameters.ini'), verbose=False)[0]
             for name in ['use_character_lstm', 'character_embedding_dimension', 'character_lstm_hidden_state_dimension', 'token_embedding_dimension', 'token_lstm_hidden_state_dimension', 'use_crf']:
@@ -124,14 +134,7 @@ class NeuroNER(object):
                     print('WARNING: parameter {0} was overwritten from {1} to {2} to be consistent with the pretrained model'.format(name, parameters[name], pretraining_parameters[name]))
                     parameters[name] = pretraining_parameters[name]
         if verbose: pprint(parameters)
-        # Update conf_parameters to reflect final parameter values
-        conf_parameters = configparser.ConfigParser()
-        conf_parameters.read(os.path.join('test', 'test-parameters-training.ini'))
-        parameter_to_section = utils.get_parameter_to_section_of_configparser(conf_parameters)
-        for k, v in parameters.items():
-            conf_parameters.set(parameter_to_section[k], k, str(v))
-
-        return parameters, conf_parameters    
+        return parameters, conf_parameters
     
     def _get_valid_dataset_filepaths(self, parameters, dataset_types=['train', 'valid', 'test', 'deploy']):
         dataset_filepaths = {}
@@ -206,55 +209,9 @@ class NeuroNER(object):
             parameters['gradient_clipping_value'] = abs(parameters['gradient_clipping_value'])
 
 
-    def __init__(self,
-                 parameters_filepath=argument_default_value, 
-                 pretrained_model_folder=argument_default_value,
-                 dataset_text_folder=argument_default_value, 
-                 character_embedding_dimension=argument_default_value,
-                 character_lstm_hidden_state_dimension=argument_default_value,
-                 check_for_digits_replaced_with_zeros=argument_default_value,
-                 check_for_lowercase=argument_default_value,
-                 debug=argument_default_value,
-                 dropout_rate=argument_default_value,
-                 experiment_name=argument_default_value,
-                 freeze_token_embeddings=argument_default_value,
-                 gradient_clipping_value=argument_default_value,
-                 learning_rate=argument_default_value,
-                 load_only_pretrained_token_embeddings=argument_default_value,
-                 load_all_pretrained_token_embeddings=argument_default_value,
-                 main_evaluation_mode=argument_default_value,
-                 maximum_number_of_epochs=argument_default_value,
-                 number_of_cpu_threads=argument_default_value,
-                 number_of_gpus=argument_default_value,
-                 optimizer=argument_default_value,
-                 output_folder=argument_default_value,
-                 patience=argument_default_value,
-                 plot_format=argument_default_value,
-                 reload_character_embeddings=argument_default_value,
-                 reload_character_lstm=argument_default_value,
-                 reload_crf=argument_default_value,
-                 reload_feedforward=argument_default_value,
-                 reload_token_embeddings=argument_default_value,
-                 reload_token_lstm=argument_default_value,
-                 remap_unknown_tokens_to_unk=argument_default_value,
-                 spacylanguage=argument_default_value,
-                 tagging_format=argument_default_value,
-                 token_embedding_dimension=argument_default_value,
-                 token_lstm_hidden_state_dimension=argument_default_value,
-                 token_pretrained_embedding_filepath=argument_default_value,
-                 tokenizer=argument_default_value,
-                 train_model=argument_default_value,
-                 use_character_lstm=argument_default_value,
-                 use_crf=argument_default_value,
-                 use_pretrained_model=argument_default_value,
-                 verbose=argument_default_value,
-                 argument_default_value=argument_default_value):
-        
-        # Parse arguments
-        arguments = dict( (k,str(v)) for k,v in locals().items() if k !='self')
-        
+    def __init__(self, parameters_filepath):
         # Initialize parameters
-        parameters, conf_parameters = self._load_parameters(arguments['parameters_filepath'], arguments=arguments)
+        parameters, conf_parameters = self._load_parameters(parameters_filepath)
         dataset_filepaths, dataset_brat_folders = self._get_valid_dataset_filepaths(parameters)
         self._check_parameter_compatiblity(parameters, dataset_filepaths)
 
@@ -367,6 +324,13 @@ class NeuroNER(object):
         bad_counter = 0 # number of epochs with no improvement on the validation test in terms of F1-score
         previous_best_valid_f1_score = 0
         epoch_number = -1
+
+        big = {}
+        for dataset_type in ['train', 'valid', 'test', 'deploy']:
+            if dataset_type not in dataset_filepaths.keys():
+                continue
+            big[dataset_type] = BatchInputGenerator(dataset, dataset_type, parameters['batch_size'])
+
         try:
             while True:
                 step = 0
@@ -376,19 +340,19 @@ class NeuroNER(object):
                 epoch_start_time = time.time()
 
                 if epoch_number != 0:
-                    # Train model: loop over all sequences of training set with shuffling
-                    sequence_numbers=list(range(len(dataset.token_indices['train'])))
-                    random.shuffle(sequence_numbers)
-                    for sequence_number in sequence_numbers:
-                        transition_params_trained = train.train_step(sess, dataset, sequence_number, model, parameters)
-                        step += 1
-                        if step % 10 == 0:
-                            print('Training {0:.2f}% done'.format(step/len(sequence_numbers)*100), end='\r', flush=True)
+                    big['train'].begin()
+                    while True:
+                        batch_input = big['train'].next()
+                        if batch_input is None:
+                            break
+                        transition_params_trained = train.train_step(sess, batch_input, model, parameters)
+                        step += int(parameters['batch_size'])
+                        print('Training {0:.2f}% done'.format(step / big['train'].size() * 100), end='\r', flush=True)
 
                 epoch_elapsed_training_time = time.time() - epoch_start_time
                 print('Training completed in {0:.2f} seconds'.format(epoch_elapsed_training_time), flush=True)
 
-                y_pred, y_true, output_filepaths = train.predict_labels(sess, model, transition_params_trained, parameters, dataset, epoch_number, stats_graph_folder, dataset_filepaths)
+                y_pred, y_true, output_filepaths = train.predict_labels(sess, model, transition_params_trained, parameters, big, dataset, epoch_number, stats_graph_folder, dataset_filepaths)
 
                 # Evaluate model: save and plot results
                 evaluate.evaluate_model(results, dataset, y_pred, y_true, stats_graph_folder, epoch_number, epoch_start_time, output_filepaths, parameters)

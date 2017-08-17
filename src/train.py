@@ -2,6 +2,8 @@ import os
 import tensorflow as tf
 import numpy as np
 import sklearn.metrics
+from tqdm import tqdm
+
 from evaluate import remap_labels
 import pickle
 import utils_tf
@@ -9,18 +11,17 @@ import codecs
 import utils_nlp
 #from tensorflow.python.tools.inspect_checkpoint import print_tensors_in_checkpoint_file
 
-def train_step(sess, dataset, sequence_number, model, parameters):
-    # Perform one iteration
-    token_indices_sequence = dataset.token_indices['train'][sequence_number]
-    for i, token_index in enumerate(token_indices_sequence):
-        if token_index in dataset.infrequent_token_indices and np.random.uniform() < 0.5:
-            token_indices_sequence[i] = dataset.UNK_TOKEN_INDEX
+def train_step(sess, batch_input, model, parameters):
     feed_dict = {
-      model.input_token_indices: token_indices_sequence,
-      model.input_label_indices_vector: dataset.label_vector_indices['train'][sequence_number],
-      model.input_token_character_indices: dataset.character_indices_padded['train'][sequence_number],
-      model.input_token_lengths: dataset.token_lengths['train'][sequence_number],
-      model.input_label_indices_flat: dataset.label_indices['train'][sequence_number],
+      model.input_token_indices: batch_input['token_indices'],
+      model.input_token_space_indices: batch_input['space_indices'],
+      model.input_token_morpheme_indices: batch_input['token_morpheme_indices'],
+      model.input_label_indices_vector: batch_input['label_vector_indices'],
+      model.input_token_character_indices: batch_input['character_indices_padded'],
+      model.input_token_lengths: batch_input['token_lengths'],
+      model.input_label_indices_flat: batch_input['label_indices'],
+      model.input_seq_lengths: batch_input['seq_lengths'],
+      model.training: True,
       model.dropout_keep_prob: 1-parameters['dropout_rate']
     }
     _, _, loss, accuracy, transition_params_trained = sess.run(
@@ -28,7 +29,7 @@ def train_step(sess, dataset, sequence_number, model, parameters):
                     feed_dict)
     return transition_params_trained
 
-def prediction_step(sess, dataset, dataset_type, model, transition_params_trained, stats_graph_folder, epoch_number, parameters, dataset_filepaths):
+def prediction_step(sess, big, dataset, dataset_type, model, transition_params_trained, stats_graph_folder, epoch_number, parameters, dataset_filepaths):
     if dataset_type == 'deploy':
         print('Predict labels for the {0} set'.format(dataset_type))
     else:
@@ -39,48 +40,66 @@ def prediction_step(sess, dataset, dataset_type, model, transition_params_traine
     output_file = codecs.open(output_filepath, 'w', 'UTF-8')
     original_conll_file = codecs.open(dataset_filepaths[dataset_type], 'r', 'UTF-8')
 
-    for i in range(len(dataset.token_indices[dataset_type])):
+    bar = tqdm(total=int(big[dataset_type].size() / big[dataset_type].batch_size))
+    big[dataset_type].begin(False)
+    while True:
+        bar.update(1)
+        batch_input = big[dataset_type].next()
+        if batch_input is None:
+            break
         feed_dict = {
-          model.input_token_indices: dataset.token_indices[dataset_type][i],
-          model.input_token_character_indices: dataset.character_indices_padded[dataset_type][i],
-          model.input_token_lengths: dataset.token_lengths[dataset_type][i],
-          model.input_label_indices_vector: dataset.label_vector_indices[dataset_type][i],
-          model.dropout_keep_prob: 1.
+            model.input_token_indices: batch_input['token_indices'],
+            model.input_token_space_indices: batch_input['space_indices'],
+            model.input_token_morpheme_indices: batch_input['token_morpheme_indices'],
+            model.input_token_character_indices: batch_input['character_indices_padded'],
+            model.input_token_lengths: batch_input['token_lengths'],
+            model.input_label_indices_vector: batch_input['label_vector_indices'],
+            model.input_seq_lengths: batch_input['seq_lengths'],
+            model.training: False,
+            model.dropout_keep_prob: 1.
         }
-        unary_scores, predictions = sess.run([model.unary_scores, model.predictions], feed_dict)
-        if parameters['use_crf']:
-            predictions, _ = tf.contrib.crf.viterbi_decode(unary_scores, transition_params_trained)
-            predictions = predictions[1:-1]
-        else:
-            predictions = predictions.tolist()
+        batch_unary_scores, batch_predictions = sess.run([model.unary_scores, model.predictions], feed_dict)
+        for idx, i in enumerate(batch_input['batch_index']):
+            if idx != 0 and i == 0:
+                break
+            #unary_scores = batch_unary_scores[idx][:batch_input['seq_lengths'][idx]]
+            #predictions = batch_predictions[idx][:batch_input['seq_lengths'][idx]]
+            unary_scores = batch_unary_scores[idx]
+            predictions = batch_predictions[idx]
+            if parameters['use_crf']:
+                predictions, _ = tf.contrib.crf.viterbi_decode(unary_scores, transition_params_trained)
+                predictions = predictions[1:batch_input['seq_lengths'][idx] + 1]
+            else:
+                predictions = predictions[:batch_input['seq_lengths'][idx]].tolist()
 
-        assert(len(predictions) == len(dataset.tokens[dataset_type][i]))
-        output_string = ''
-        prediction_labels = [dataset.index_to_label[prediction] for prediction in predictions]
-        gold_labels = dataset.labels[dataset_type][i]
-        if parameters['tagging_format'] == 'bioes':
-            prediction_labels = utils_nlp.bioes_to_bio(prediction_labels)
-            gold_labels = utils_nlp.bioes_to_bio(gold_labels)
-        for prediction, token, gold_label in zip(prediction_labels, dataset.tokens[dataset_type][i], gold_labels):
-            while True:
-                line = original_conll_file.readline()
-                split_line = line.strip().split(' ')
-                if '-DOCSTART-' in split_line[0] or len(split_line) == 0 or len(split_line[0]) == 0:
-                    continue
-                else:
-                    token_original = split_line[0]
-                    if parameters['tagging_format'] == 'bioes':
-                        split_line.pop()
-                    gold_label_original = split_line[-1]
-                    assert(token == token_original and gold_label == gold_label_original) 
-                    break            
-            split_line.append(prediction)
-            output_string += ' '.join(split_line) + '\n'
-        output_file.write(output_string+'\n')
+            #assert (len(predictions) == len(dataset.tokens[dataset_type][i]))
+            output_string = ''
+            prediction_labels = [dataset.index_to_label[prediction] for prediction in predictions]
+            gold_labels = dataset.labels[dataset_type][i]
+            if parameters['tagging_format'] == 'bioes':
+                prediction_labels = utils_nlp.bioes_to_bio(prediction_labels)
+                gold_labels = utils_nlp.bioes_to_bio(gold_labels)
+            for prediction, token, gold_label in zip(prediction_labels, dataset.tokens[dataset_type][i], gold_labels):
+                while True:
+                    line = original_conll_file.readline()
+                    split_line = line.strip().split(' ')
+                    if '-DOCSTART-' in split_line[0] or len(split_line) == 0 or len(split_line[0]) == 0:
+                        continue
+                    else:
+                        token_original = split_line[0]
+                        if parameters['tagging_format'] == 'bioes':
+                            split_line.pop()
+                        gold_label_original = split_line[-1]
+                        assert (token == token_original and gold_label == gold_label_original)
+                        break
+                split_line.append(prediction)
+                output_string += ' '.join(split_line) + '\n'
+            output_file.write(output_string + '\n')
 
-        all_predictions.extend(predictions)
-        all_y_true.extend(dataset.label_indices[dataset_type][i])
+            all_predictions.extend(predictions)
+            all_y_true.extend(dataset.label_indices[dataset_type][i])
 
+    bar.close()
     output_file.close()
     original_conll_file.close()
 
@@ -100,15 +119,17 @@ def prediction_step(sess, dataset, dataset_type, model, transition_params_traine
     return all_predictions, all_y_true, output_filepath
 
 
-def predict_labels(sess, model, transition_params_trained, parameters, dataset, epoch_number, stats_graph_folder, dataset_filepaths):
+def predict_labels(sess, model, transition_params_trained, parameters, big, dataset, epoch_number, stats_graph_folder, dataset_filepaths):
+    # Predict labels using trained model
     # Predict labels using trained model
     y_pred = {}
     y_true = {}
     output_filepaths = {}
-    for dataset_type in ['train', 'valid', 'test', 'deploy']:
-        if dataset_type not in dataset_filepaths.keys():
+    #for dataset_type in ['train', 'valid', 'test', 'deploy']:
+    for dataset_type in ['valid', 'test', 'deploy']:
+        if dataset_type not in big:
             continue
-        prediction_output = prediction_step(sess, dataset, dataset_type, model, transition_params_trained, stats_graph_folder, epoch_number, parameters, dataset_filepaths)
+        prediction_output = prediction_step(sess, big, dataset, dataset_type, model, transition_params_trained, stats_graph_folder, epoch_number, parameters, dataset_filepaths)
         y_pred[dataset_type], y_true[dataset_type], output_filepaths[dataset_type] = prediction_output
     return y_pred, y_true, output_filepaths
 

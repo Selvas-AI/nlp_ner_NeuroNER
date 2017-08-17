@@ -8,6 +8,9 @@ import time
 import datetime
 import shutil
 
+import numpy
+
+
 def order_dictionary(dictionary, mode, reverse=False):
     '''
     Order a dictionary by 'key' or 'value'.
@@ -61,9 +64,13 @@ def pad_list(old_list, padding_size, padding_value):
     http://stackoverflow.com/questions/3438756/some-built-in-to-pad-a-list-in-python
     Example: pad_list([6,2,3], 5, 0) returns [6,2,3,0,0]
     '''
+    if padding_size == len(old_list):
+        return old_list
     assert padding_size >= len(old_list)
-    return old_list + [padding_value] * (padding_size-len(old_list))
-
+    if type(old_list) is numpy.ndarray:
+        return numpy.append(old_list, [padding_value] * (padding_size-len(old_list)), axis=0)
+    else:
+        return old_list + [padding_value] * (padding_size-len(old_list))
 def get_basename_without_extension(filepath):
     '''
     Getting the basename of the filepath without the extension

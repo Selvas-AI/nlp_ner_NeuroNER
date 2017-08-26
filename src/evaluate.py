@@ -224,7 +224,7 @@ def evaluate_model(results, dataset, y_pred_all, y_true_all, stats_graph_folder,
     result_update = {}
 
     for dataset_type in ['train', 'valid', 'test']:
-        if dataset_type not in output_filepaths.keys():
+        if dataset_type not in y_pred_all:
             continue
         print('Generating plots for the {0} set'.format(dataset_type))
         result_update[dataset_type] = {}
@@ -246,7 +246,7 @@ def evaluate_model(results, dataset, y_pred_all, y_true_all, stats_graph_folder,
 
     # CoNLL evaluation script
     for dataset_type in ['train', 'valid', 'test']:
-        if dataset_type not in output_filepaths.keys():
+        if dataset_type not in y_pred_all:
             continue
         conll_evaluation_script = os.path.join('.', 'conlleval')
         conll_output_filepath = '{0}_conll_evaluation.txt'.format(output_filepaths[dataset_type])

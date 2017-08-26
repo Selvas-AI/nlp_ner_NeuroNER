@@ -66,7 +66,9 @@ def pad_list(old_list, padding_size, padding_value):
     '''
     if padding_size == len(old_list):
         return old_list
-    assert padding_size >= len(old_list)
+    #assert padding_size >= len(old_list)
+    if padding_size < len(old_list):
+        dd = 0
     if type(old_list) is numpy.ndarray:
         return numpy.append(old_list, [padding_value] * (padding_size-len(old_list)), axis=0)
     else:

@@ -1,6 +1,6 @@
 import matplotlib
 
-from batch_input_generator import BatchInputGenerator
+from queue_dataset import QueueDataset
 
 matplotlib.use('Agg')
 import train
@@ -24,6 +24,7 @@ import numpy as np
 import utils_nlp
 import distutils
 import configparser
+import collections
 from pprint import pprint
 # http://stackoverflow.com/questions/42217532/tensorflow-version-1-0-0-rc2-on-windows-opkernel-op-bestsplits-device-typ
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -137,8 +138,13 @@ class NeuroNER(object):
         return parameters, conf_parameters
     
     def _get_valid_dataset_filepaths(self, parameters, dataset_types=['train', 'valid', 'test', 'deploy']):
-        dataset_filepaths = {}
+        dataset_filepaths = collections.OrderedDict()
         dataset_brat_folders = {}
+
+        for dataset_type in dataset_types:
+            dataset_filepaths[dataset_type] = os.path.join(parameters['dataset_text_folder'], dataset_type)
+            dataset_brat_folders[dataset_type] = os.path.join(parameters['dataset_text_folder'], dataset_type)
+        '''
         for dataset_type in dataset_types:
             dataset_filepaths[dataset_type] = os.path.join(parameters['dataset_text_folder'], '{0}.txt'.format(dataset_type))
             dataset_brat_folders[dataset_type] = os.path.join(parameters['dataset_text_folder'], dataset_type)
@@ -185,7 +191,7 @@ class NeuroNER(object):
                 bioes_filepath = os.path.join(parameters['dataset_text_folder'], '{0}_bioes.txt'.format(utils.get_basename_without_extension(dataset_filepaths[dataset_type])))
                 utils_nlp.convert_conll_from_bio_to_bioes(dataset_filepaths[dataset_type], bioes_filepath)
                 dataset_filepaths[dataset_type] = bioes_filepath
-    
+        '''
         return dataset_filepaths, dataset_brat_folders
     
     def _check_parameter_compatiblity(self, parameters, dataset_filepaths):
@@ -216,7 +222,8 @@ class NeuroNER(object):
         self._check_parameter_compatiblity(parameters, dataset_filepaths)
 
         # Load dataset
-        dataset = ds.Dataset(verbose=parameters['verbose'], debug=parameters['debug'])
+        #dataset = ds.Dataset(verbose=parameters['verbose'], debug=parameters['debug'])
+        dataset = QueueDataset(verbose=parameters['verbose'], debug=parameters['debug'])
         token_to_vector = dataset.load_dataset(dataset_filepaths, parameters)
         
         # Launch session
@@ -227,8 +234,9 @@ class NeuroNER(object):
         allow_soft_placement=True, # automatically choose an existing and supported device to run the operations in case the specified one doesn't exist
         log_device_placement=False
         )
+        session_conf.gpu_options.per_process_gpu_memory_fraction = 0.9
         sess = tf.Session(config=session_conf)
-        
+
         with sess.as_default():
             # Create model and initialize or load pretrained model
             ### Instantiate the model
@@ -277,7 +285,8 @@ class NeuroNER(object):
         utils.create_folder_if_not_exists(model_folder)
         with open(os.path.join(model_folder, 'parameters.ini'), 'w') as parameters_file:
             conf_parameters.write(parameters_file)
-        pickle.dump(dataset, open(os.path.join(model_folder, 'dataset.pickle'), 'wb'))
+
+        #pickle.dump(dataset, open(os.path.join(model_folder, 'dataset.pickle'), 'wb'))
             
         tensorboard_log_folder = os.path.join(stats_graph_folder, 'tensorboard_logs')
         utils.create_folder_if_not_exists(tensorboard_log_folder)
@@ -325,12 +334,6 @@ class NeuroNER(object):
         previous_best_valid_f1_score = 0
         epoch_number = -1
 
-        big = {}
-        for dataset_type in ['train', 'valid', 'test', 'deploy']:
-            if dataset_type not in dataset_filepaths.keys():
-                continue
-            big[dataset_type] = BatchInputGenerator(dataset, dataset_type, parameters['batch_size'])
-
         try:
             while True:
                 step = 0
@@ -340,19 +343,31 @@ class NeuroNER(object):
                 epoch_start_time = time.time()
 
                 if epoch_number != 0:
-                    big['train'].begin()
                     while True:
-                        batch_input = big['train'].next()
-                        if batch_input is None:
+                        if step >= dataset.sample_size['train']:
                             break
-                        transition_params_trained = train.train_step(sess, batch_input, model, parameters)
+                        seq_lengths, label_indicess, token_indicess, pos_sequences, space_sequences, token_lengthss, character_indicess, _ = dataset.data_queue['train'].next()
+
+                        feed_dict = {
+                            model.input_token_indices: token_indicess,
+                            model.input_token_space_indices: space_sequences,
+                            model.input_token_morpheme_indices: pos_sequences,
+                            model.input_token_character_indices: character_indicess,
+                            model.input_token_lengths: token_lengthss,
+                            model.input_label_indices_flat: label_indicess,
+                            model.input_seq_lengths: seq_lengths,
+                            model.training: True,
+                            model.dropout_keep_prob: 1 - parameters['dropout_rate']
+                        }
+                        transition_params_trained = train.train_step(sess, feed_dict, model)
                         step += int(parameters['batch_size'])
-                        print('Training {0:.2f}% done'.format(step / big['train'].size() * 100), end='\r', flush=True)
+                        print('Training {0:.2f}% done'.format(step / dataset.sample_size['train'] * 100), end='\r',
+                              flush=True)
 
                 epoch_elapsed_training_time = time.time() - epoch_start_time
                 print('Training completed in {0:.2f} seconds'.format(epoch_elapsed_training_time), flush=True)
 
-                y_pred, y_true, output_filepaths = train.predict_labels(sess, model, transition_params_trained, parameters, big, dataset, epoch_number, stats_graph_folder, dataset_filepaths)
+                y_pred, y_true, output_filepaths = train.predict_labels(sess, model, transition_params_trained, parameters, dataset, epoch_number, stats_graph_folder, dataset_filepaths)
 
                 # Evaluate model: save and plot results
                 evaluate.evaluate_model(results, dataset, y_pred, y_true, stats_graph_folder, epoch_number, epoch_start_time, output_filepaths, parameters)
@@ -376,7 +391,7 @@ class NeuroNER(object):
                 if  valid_f1_score > previous_best_valid_f1_score:
                     bad_counter = 0
                     previous_best_valid_f1_score = valid_f1_score
-                    conll_to_brat.output_brat(output_filepaths, dataset_brat_folders, stats_graph_folder, overwrite=True)
+                    #conll_to_brat.output_brat(output_filepaths, dataset_brat_folders, stats_graph_folder, overwrite=True)
                     self.transition_params_trained = transition_params_trained
                 else:
                     bad_counter += 1

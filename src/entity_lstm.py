@@ -3,9 +3,9 @@ import pickle
 import re
 import time
 
-import bnlstm
 import tensorflow as tf
 
+import bnlstm
 import utils_nlp
 import utils_tf
 
@@ -118,13 +118,11 @@ class EntityLSTM(object):
         self.batch_size = int(parameters['batch_size'])
         # Placeholders for input, output and dropout
         self.input_token_indices = tf.placeholder(tf.int32, [self.batch_size, None], name="input_token_indices")
-        self.input_token_space_indices = tf.placeholder(tf.float32, [self.batch_size, None],
+        self.input_token_space_indices = tf.placeholder(tf.int32, [self.batch_size, None],
                                                         name="input_token_space_indices")
-        self.input_token_morpheme_indices = tf.placeholder(tf.float32,
-                                                           [self.batch_size, None, dataset.number_of_pos_classes],
+        self.input_token_morpheme_indices = tf.placeholder(tf.int32,
+                                                           [self.batch_size, None],
                                                            name="input_token_morpheme_indices")
-        self.input_label_indices_vector = tf.placeholder(tf.float32, [self.batch_size, None, dataset.number_of_classes],
-                                                         name="input_label_indices_vector")
         self.input_label_indices_flat = tf.placeholder(tf.int32, [self.batch_size, None],
                                                        name="input_label_indices_flat")
         self.input_token_character_indices = tf.placeholder(tf.int32, [self.batch_size, None, None],
@@ -188,17 +186,17 @@ class EntityLSTM(object):
             utils_tf.variable_summaries(self.token_embedding_weights)
 
         if parameters['morpheme_tag_include']:
+            input_token_space_indices_oh = tf.one_hot(self.input_token_morpheme_indices, dataset.number_of_pos_classes)
             stacked_embedded_tokens = tf.concat(
-                [stacked_embedded_tokens, self.input_token_morpheme_indices],
+                [stacked_embedded_tokens, input_token_space_indices_oh],
                 axis=2)
-
         if parameters['space_tag_include']:
-            itsi_shape = tf.shape(self.input_token_space_indices)
-            reshaped_itsi = tf.reshape(self.input_token_space_indices, [itsi_shape[0], itsi_shape[1], 1])
+            input_token_space_indices_oh = tf.one_hot(self.input_token_space_indices, 2)
+            #itsi_shape = tf.shape(input_token_space_indices_oh)
+            #reshaped_itsi = tf.reshape(input_token_space_indices_oh, [itsi_shape[0], itsi_shape[1], 2])
             stacked_embedded_tokens = tf.concat(
-                [stacked_embedded_tokens, reshaped_itsi],
+                [stacked_embedded_tokens, input_token_space_indices_oh],
                 axis=2)
-
         # Concatenate character LSTM outputs and token embeddings
         if parameters['use_character_lstm']:
             with tf.variable_scope("concatenate_token_and_character_vectors"):
@@ -250,16 +248,19 @@ class EntityLSTM(object):
                 # Add start and end tokens
                 small_score = -1000.0
                 large_score = 0.0
-                unary_scores_with_start_and_end = tf.concat([self.unary_scores,
-                                                             tf.tile(tf.constant(small_score, shape=[1, 1, 2]),
-                                                                     [tf.shape(self.unary_scores)[0],
-                                                                      tf.shape(self.unary_scores)[1], 1])], 2)
+
+                unary_scores_with_start_and_end = tf.concat(
+                    [self.unary_scores, tf.tile(tf.constant(small_score, shape=[1, 1, 2]),
+                                                [tf.shape(self.unary_scores)[0], tf.shape(self.unary_scores)[1], 1])],
+                    2)
+
                 start_unary_scores = [[[small_score] * dataset.number_of_classes + [large_score,
                                                                                     small_score]]] * self.batch_size
                 end_unary_scores = [[[small_score] * dataset.number_of_classes + [small_score,
                                                                                   large_score]]] * self.batch_size
                 self.unary_scores = tf.concat([start_unary_scores, unary_scores_with_start_and_end, end_unary_scores],
                                               1)
+
                 start_index = dataset.number_of_classes
                 end_index = dataset.number_of_classes + 1
                 input_label_indices_flat_with_start_and_end = tf.concat(
@@ -297,12 +298,13 @@ class EntityLSTM(object):
                 self.crf_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=vs.name)
 
             # Calculate mean cross-entropy loss
+            input_label_indices_vector_oh = tf.one_hot(self.input_label_indices_vector, dataset.number_of_classes)
             with tf.variable_scope("loss"):
                 losses = tf.nn.softmax_cross_entropy_with_logits(logits=self.unary_scores,
-                                                                 labels=self.input_label_indices_vector, name='softmax')
+                                                                 labels=input_label_indices_vector_oh, name='softmax')
                 self.loss = tf.reduce_mean(losses, name='cross_entropy_mean_loss')
             with tf.variable_scope("accuracy"):
-                correct_predictions = tf.equal(self.predictions, tf.argmax(self.input_label_indices_vector, 2))
+                correct_predictions = tf.equal(self.predictions, tf.argmax(input_label_indices_vector_oh, 2))
                 self.accuracy = tf.reduce_mean(tf.cast(correct_predictions, 'float'), name='accuracy')
 
         self.define_training_procedure(parameters)
@@ -338,7 +340,7 @@ class EntityLSTM(object):
         start_time = time.time()
         print('Load token embeddings... ', end='', flush=True)
         if token_to_vector == None:
-            token_to_vector = utils_nlp.load_pretrained_token_embeddings(parameters)
+             token_to_vector = utils_nlp.load_pretrained_token_embeddings(parameters)
 
         initial_weights = sess.run(self.token_embedding_weights.read_value())
         number_of_loaded_word_vectors = 0

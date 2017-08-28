@@ -11,7 +11,7 @@ import utils_tf
 
 
 def bidirectional_LSTM(input, training, hidden_state_dimension, initializer, sequence_length=None,
-                       output_sequence=True, use_bnlstm=False):
+                       output_sequence=True, lstm_cell_type='lstm'):
     with tf.variable_scope("bidirectional_LSTM"):
         if sequence_length == None:
             batch_size = 1
@@ -25,12 +25,15 @@ def bidirectional_LSTM(input, training, hidden_state_dimension, initializer, seq
         for direction in ["forward", "backward"]:
             with tf.variable_scope(direction):
                 # LSTM cell
-                if use_bnlstm:
+                if lstm_cell_type == 'bnlstm':
                     lstm_cell[direction] = bnlstm.BN_LSTMCell(hidden_state_dimension,
                                                               training,
                                                               forget_bias=1.0,
                                                               initializer=initializer,
                                                               state_is_tuple=True)
+                elif lstm_cell_type == 'lnlstm':
+                    lstm_cell[direction] = tf.contrib.rnn.LayerNormBasicLSTMCell(hidden_state_dimension,
+                                                                                 forget_bias=1.0,)
                 else:
                     lstm_cell[direction] = tf.contrib.rnn.CoupledInputForgetGateLSTMCell(hidden_state_dimension,
                                                                                          forget_bias=1.0,
@@ -97,7 +100,7 @@ def MultiBlstm(input, input_seq_lengths, dropout_keep_prob, training, initialize
                                                        hd, initializer,
                                                        sequence_length=input_seq_lengths,
                                                        output_sequence=True,
-                                                       use_bnlstm=parameters['use_bnlstm'])
+                                                       lstm_cell_type=parameters['lstm_cell_type'])
                 if 'token_lstm_variables' in locals():
                     token_lstm_variables += tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=vs.name)
                 else:
@@ -115,7 +118,7 @@ class EntityLSTM(object):
     def __init__(self, dataset, parameters):
 
         self.verbose = False
-        self.batch_size = int(parameters['batch_size'])
+        self.batch_size = parameters['batch_size']
         # Placeholders for input, output and dropout
         self.input_token_indices = tf.placeholder(tf.int32, [self.batch_size, None], name="input_token_indices")
         self.input_token_space_indices = tf.placeholder(tf.int32, [self.batch_size, None],
@@ -135,6 +138,7 @@ class EntityLSTM(object):
         # Internal parameters
         initializer = tf.contrib.layers.xavier_initializer()
 
+        itl_shape = tf.shape(self.input_token_lengths)
         if parameters['use_character_lstm']:
             # Character-level LSTM
             # Idea: reshape so that we have a tensor [number_of_token, max_token_length, token_embeddings_size], which we pass to the LSTM
@@ -156,7 +160,6 @@ class EntityLSTM(object):
 
             # Character LSTM layer
             with tf.variable_scope('character_lstm') as vs:
-                itl_shape = tf.shape(self.input_token_lengths)
                 reshaped_itl = tf.reshape(self.input_token_lengths,
                                           [itl_shape[0] * itl_shape[1]])
                 character_lstm_output = bidirectional_LSTM(embedded_characters,
@@ -192,8 +195,6 @@ class EntityLSTM(object):
                 axis=2)
         if parameters['space_tag_include']:
             input_token_space_indices_oh = tf.one_hot(self.input_token_space_indices, 2)
-            #itsi_shape = tf.shape(input_token_space_indices_oh)
-            #reshaped_itsi = tf.reshape(input_token_space_indices_oh, [itsi_shape[0], itsi_shape[1], 2])
             stacked_embedded_tokens = tf.concat(
                 [stacked_embedded_tokens, input_token_space_indices_oh],
                 axis=2)
@@ -340,7 +341,7 @@ class EntityLSTM(object):
         start_time = time.time()
         print('Load token embeddings... ', end='', flush=True)
         if token_to_vector == None:
-             token_to_vector = utils_nlp.load_pretrained_token_embeddings(parameters)
+            token_to_vector = utils_nlp.load_pretrained_token_embeddings(parameters)
 
         initial_weights = sess.run(self.token_embedding_weights.read_value())
         number_of_loaded_word_vectors = 0

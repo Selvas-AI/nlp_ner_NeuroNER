@@ -3,6 +3,7 @@ import os
 
 import sklearn.metrics
 import tensorflow as tf
+from tqdm import tqdm
 
 import utils_nlp
 from evaluate import remap_labels
@@ -28,8 +29,10 @@ def prediction_step(sess, dataset, dataset_type, model, transition_params_traine
     output_filepath = os.path.join(stats_graph_folder, '{1:03d}_{0}.txt'.format(dataset_type, epoch_number))
     output_file = codecs.open(output_filepath, 'w', 'UTF-8')
 
+    bar = tqdm(total=dataset.sample_size[dataset_type] / parameters['batch_size'])
     step = 0
     while True:
+        bar.update(1)
         if step >= dataset.sample_size[dataset_type]:
             break
         seq_lengths, label_indicess, token_indicess, pos_sequences, space_sequences, token_lengthss, character_indicess, original_conlls = \
@@ -48,7 +51,7 @@ def prediction_step(sess, dataset, dataset_type, model, transition_params_traine
         }
 
         batch_unary_scores, batch_predictions = sess.run([model.unary_scores, model.predictions], feed_dict)
-        for idx in range(int(parameters['batch_size'])):
+        for idx in range(parameters['batch_size']):
             unary_scores = batch_unary_scores[idx]
             predictions = batch_predictions[idx]
             if parameters['use_crf']:
@@ -82,8 +85,9 @@ def prediction_step(sess, dataset, dataset_type, model, transition_params_traine
 
             all_predictions.extend(predictions)
             all_y_true.extend(label_indicess[idx][:seq_lengths[idx]])
-        step += int(parameters['batch_size'])
+        step += parameters['batch_size']
     output_file.close()
+    bar.close()
 
     if dataset_type != 'deploy':
         if parameters['main_evaluation_mode'] == 'conll':

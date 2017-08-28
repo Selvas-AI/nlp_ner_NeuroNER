@@ -149,6 +149,11 @@ class QueueDataset(object):
         label_count['all'] = utils.order_dictionary(label_count['all'], 'key', reverse=False)
         character_count['all'] = utils.order_dictionary(character_count['all'], 'value', reverse=True)
 
+        print('all token_count size is %d' % len(token_count['all']))
+        if parameters['limit_word_size'] > 0 and len(token_count['all']) > parameters['limit_word_size']:
+            limited_dict = dict(list(token_count['all'].items())[:parameters['limit_word_size']])
+            print('token_count is limited to %d' % parameters['limit_word_size'])
+
         token_to_index = {}
         token_to_index[self.UNK] = self.UNK_TOKEN_INDEX
         iteration_number = 0
@@ -156,7 +161,8 @@ class QueueDataset(object):
         for token, count in token_count['all'].items():
             if iteration_number == self.UNK_TOKEN_INDEX: iteration_number += 1
 
-            if parameters['remap_unknown_tokens_to_unk'] == 1 and \
+            if ('limited_dict' in locals() and token not in limited_dict) or \
+                parameters['remap_unknown_tokens_to_unk'] == 1 and \
                     (token_count['train'][token] == 0 or \
                              parameters['load_only_pretrained_token_embeddings']) and \
                     not utils_nlp.is_token_in_pretrained_embeddings(token, token_to_vector, parameters) and \
@@ -259,7 +265,7 @@ class QueueDataset(object):
         data_queue = {}
         for dataset_type, base in dataset_filepaths.items():
             if os.path.exists(base):
-                data_queue[dataset_type] = Batcher(self, base, int(parameters['batch_size']),
+                data_queue[dataset_type] = Batcher(self, base, parameters['batch_size'],
                                         is_train=True if dataset_type == 'train' else False)
 
         self.data_queue = data_queue

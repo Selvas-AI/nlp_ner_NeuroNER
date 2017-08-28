@@ -187,11 +187,15 @@ def brat_to_conll(input_folder):
     if len(text_filepaths) == 0:
         return
 
-    pool = Pool(5, limit_cpu)
+    if len(text_filepaths) > 5:
+        pool = Pool(5, limit_cpu)
+    else:
+        pool = Pool(len(text_filepaths), limit_cpu)
     result = pool.imap_unordered(convert, text_filepaths)
 
     for _ in tqdm(range(len(text_filepaths))):
         result.next()
+    pool.join()
 
 
 def convert(text_filepath):
@@ -222,7 +226,7 @@ def convert(text_filepath):
                     pass
 
         output_text = ""
-        for sentence in sentences:
+        for sentence in tqdm(sentences):
             current_text = parse_token(sentence, base_filename=base_filename, entities=entities, hit_map=hit_map,
                                        verbose=False)
             if current_text is not None:
@@ -240,6 +244,9 @@ MAX_CHARACTER_LEN = 20
 NOT_CHAR_PATTERN = re.compile(r'[^"\s\'0-9A-Za-zㄱ-ㅣ가-힣\.,-\/#!$%\^&\*;:{}=\-_`~()@\+\?><\[\]\+]')
 
 def parse_token(sentence, base_filename, entities, hit_map, verbose):
+#    if len(sentence) > 40:
+#        return None
+
     output_text = ""
     inside = False
     previous_token_label = 'O'

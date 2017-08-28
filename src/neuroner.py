@@ -1,4 +1,5 @@
 import matplotlib
+from tqdm import tqdm
 
 from queue_dataset import QueueDataset
 
@@ -94,7 +95,9 @@ class NeuroNER(object):
                       'space_tag_include' : True,
                       'morpheme_tag_include' : True,
                       'skip_data_compatibility' : False,
-                      'use_bnlstm' : False,
+                      'lstm_cell_type': 'lstm',
+                      'batch_size' : 1,
+                      'limit_word_size' : 0
                       }
         # If a parameter file is specified, load it
         if len(parameters_filepath) > 0:
@@ -115,7 +118,8 @@ class NeuroNER(object):
                 v = v.split(',')
             # Ensure that each parameter is cast to the correct type
             if k in ['character_embedding_dimension', 'character_lstm_hidden_state_dimension', 'token_embedding_dimension',
-                     'token_lstm_hidden_state_dimension', 'patience', 'maximum_number_of_epochs', 'maximum_training_time', 'number_of_cpu_threads', 'number_of_gpus']:
+                     'token_lstm_hidden_state_dimension', 'patience', 'maximum_number_of_epochs', 'maximum_training_time',
+                     'number_of_cpu_threads', 'number_of_gpus', 'batch_size', 'limit_word_size']:
                 if type(v) is list:
                     parameters[k] = [int(e) for e in v]
                 else:
@@ -125,7 +129,7 @@ class NeuroNER(object):
             elif k in ['remap_unknown_tokens_to_unk', 'use_character_lstm', 'use_crf', 'train_model', 'use_pretrained_model', 'debug', 'verbose',
                        'reload_character_embeddings', 'reload_character_lstm', 'reload_token_embeddings', 'reload_token_lstm', 'reload_feedforward', 'reload_crf',
                        'check_for_lowercase', 'check_for_digits_replaced_with_zeros', 'freeze_token_embeddings', 'load_only_pretrained_token_embeddings', 'load_all_pretrained_token_embeddings',
-                       'skip_data_compatibility', 'morpheme_tag_include', 'space_tag_include', 'use_bnlstm']:
+                       'skip_data_compatibility', 'morpheme_tag_include', 'space_tag_include']:
                 parameters[k] = distutils.util.strtobool(v)
         # If loading pretrained model, set the model hyperparameters according to the pretraining parameters
         if parameters['use_pretrained_model']:
@@ -287,7 +291,8 @@ class NeuroNER(object):
             conf_parameters.write(parameters_file)
 
         #pickle.dump(dataset, open(os.path.join(model_folder, 'dataset.pickle'), 'wb'))
-            
+
+
         tensorboard_log_folder = os.path.join(stats_graph_folder, 'tensorboard_logs')
         utils.create_folder_if_not_exists(tensorboard_log_folder)
         tensorboard_log_folders = {}
@@ -296,6 +301,7 @@ class NeuroNER(object):
             utils.create_folder_if_not_exists(tensorboard_log_folders[dataset_type])
                 
         # Instantiate the writers for TensorBoard
+        
         writers = {}
         for dataset_type in dataset_filepaths.keys():
             writers[dataset_type] = tf.summary.FileWriter(tensorboard_log_folders[dataset_type], graph=sess.graph)
@@ -307,10 +313,11 @@ class NeuroNER(object):
         token_list_file_path = os.path.join(model_folder, 'tensorboard_metadata_tokens.tsv')
         tensorboard_token_embeddings.metadata_path = os.path.relpath(token_list_file_path, '..')
 
-        tensorboard_character_embeddings = embeddings_projector_config.embeddings.add()
-        tensorboard_character_embeddings.tensor_name = model.character_embedding_weights.name
-        character_list_file_path = os.path.join(model_folder, 'tensorboard_metadata_characters.tsv')
-        tensorboard_character_embeddings.metadata_path = os.path.relpath(character_list_file_path, '..')
+        if parameters['use_character_lstm']:
+            tensorboard_character_embeddings = embeddings_projector_config.embeddings.add()
+            tensorboard_character_embeddings.tensor_name = model.character_embedding_weights.name
+            character_list_file_path = os.path.join(model_folder, 'tensorboard_metadata_characters.tsv')
+            tensorboard_character_embeddings.metadata_path = os.path.relpath(character_list_file_path, '..')
 
         projector.visualize_embeddings(embedding_writer, embeddings_projector_config)
 
@@ -320,14 +327,14 @@ class NeuroNER(object):
             token_list_file.write('{0}\n'.format(dataset.index_to_token[token_index]))
         token_list_file.close()
 
-        character_list_file = codecs.open(character_list_file_path,'w', 'UTF-8')
-        for character_index in range(dataset.alphabet_size):
-            if character_index == dataset.PADDING_CHARACTER_INDEX:
-                character_list_file.write('PADDING\n')
-            else:
-                character_list_file.write('{0}\n'.format(dataset.index_to_character[character_index]))
-        character_list_file.close()
-
+        if parameters['use_character_lstm']:
+            character_list_file = codecs.open(character_list_file_path,'w', 'UTF-8')
+            for character_index in range(dataset.alphabet_size):
+                if character_index == dataset.PADDING_CHARACTER_INDEX:
+                    character_list_file.write('PADDING\n')
+                else:
+                    character_list_file.write('{0}\n'.format(dataset.index_to_character[character_index]))
+            character_list_file.close()
 
         # Start training + evaluation loop. Each iteration corresponds to 1 epoch.
         bad_counter = 0 # number of epochs with no improvement on the validation test in terms of F1-score
@@ -343,7 +350,9 @@ class NeuroNER(object):
                 epoch_start_time = time.time()
 
                 if epoch_number != 0:
+                    bar = tqdm(total=dataset.sample_size['train'] / parameters['batch_size'])
                     while True:
+                        bar.update(1)
                         if step >= dataset.sample_size['train']:
                             break
                         seq_lengths, label_indicess, token_indicess, pos_sequences, space_sequences, token_lengthss, character_indicess, _ = dataset.data_queue['train'].next()
@@ -360,10 +369,9 @@ class NeuroNER(object):
                             model.dropout_keep_prob: 1 - parameters['dropout_rate']
                         }
                         transition_params_trained = train.train_step(sess, feed_dict, model)
-                        step += int(parameters['batch_size'])
-                        print('Training {0:.2f}% done'.format(step / dataset.sample_size['train'] * 100), end='\r',
-                              flush=True)
-
+                        step += parameters['batch_size']
+                        #print('Training {0:.2f}% done'.format(step / dataset.sample_size['train'] * 100), end='\r', flush=True)
+                    bar.close()
                 epoch_elapsed_training_time = time.time() - epoch_start_time
                 print('Training completed in {0:.2f} seconds'.format(epoch_elapsed_training_time), flush=True)
 
@@ -384,7 +392,6 @@ class NeuroNER(object):
                 writers['train'].add_summary(summary, epoch_number)
                 writers['train'].flush()
                 utils.copytree(writers['train'].get_logdir(), model_folder)
-
 
                 # Early stop
                 valid_f1_score = results['epoch'][epoch_number][0]['valid']['f1_score']['micro']

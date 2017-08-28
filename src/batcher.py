@@ -19,20 +19,23 @@ import re
 import time
 from collections import namedtuple
 from random import shuffle
-from threading import Thread
+#from threading import Thread
+from multiprocessing import Process, Queue
+
+
 
 import numpy as np
 import tensorflow as tf
-from six.moves import queue as Queue
-from six.moves import xrange
+#from six.moves import queue as Queue
+#from six.moves import xrange
 
 import utils
 
 ModelInput = namedtuple('ModelInput',
                         'token_indices character_indices label_indices pos_sequence space_sequence conll token_lengths sequence_length')
 
-BUCKET_CACHE_BATCH = 100
-QUEUE_NUM_BATCH = 100
+BUCKET_CACHE_BATCH = 20
+QUEUE_NUM_BATCH = 1000
 
 
 class Batcher(object):
@@ -57,32 +60,32 @@ class Batcher(object):
         self._batch_size = batch_size
         self._is_train = is_train
         if self._is_train:
-            input_thread_num = 16
+            input_thread_num = 2
             bucket_thread_num = 4
         else:
             input_thread_num = 1
             bucket_thread_num = 1
         self._bucketing = bucketing
         self._truncate_input = truncate_input
-        self._input_queue = Queue.Queue(QUEUE_NUM_BATCH * self._batch_size)
-        self._bucket_input_queue = Queue.Queue(QUEUE_NUM_BATCH)
+        self._input_queue = Queue(QUEUE_NUM_BATCH * self._batch_size)
+        self._bucket_input_queue = Queue(QUEUE_NUM_BATCH)
         self._input_threads = None
         self._bucketing_threads = None
         self._watch_thread = None
         self._input_threads = []
-        for _ in xrange(input_thread_num):
-            self._input_threads.append(Thread(target=self._FillInputQueue))
+        for _ in range(input_thread_num):
+            self._input_threads.append(Process(target=self._FillInputQueue))
             self._input_threads[-1].daemon = True
             self._input_threads[-1].start()
         self._bucketing_threads = []
-        for _ in xrange(bucket_thread_num):
-            self._bucketing_threads.append(Thread(target=self._FillBucketInputQueue))
+        for _ in range(bucket_thread_num):
+            self._bucketing_threads.append(Process(target=self._FillBucketInputQueue))
             self._bucketing_threads[-1].daemon = True
             self._bucketing_threads[-1].start()
 
-        self._watch_thread = Thread(target=self._WatchThreads)
-        self._watch_thread.daemon = True
-        self._watch_thread.start()
+        #self._watch_thread = Process(target=self._WatchThreads)
+        #self._watch_thread.daemon = True
+        #self._watch_thread.start()
 
     def next(self):
         batch_data = self._bucket_input_queue.get()
@@ -169,13 +172,13 @@ class Batcher(object):
         """Fill bucketed batches into the bucket_input_queue."""
         while True:
             inputs = []
-            for _ in xrange(self._batch_size * BUCKET_CACHE_BATCH):
+            for _ in range(self._batch_size * BUCKET_CACHE_BATCH):
                 inputs.append(self._input_queue.get())
-            if self._bucketing:
+            if self._is_train:
                 inputs = sorted(inputs, key=lambda inp: inp.sequence_length)
 
             batches = []
-            for i in xrange(0, len(inputs), self._batch_size):
+            for i in range(0, len(inputs), self._batch_size):
                 batch_data = {}
                 current = inputs[i:i + self._batch_size]
                 max_token_size = max([len(element.token_indices) for element in current])
@@ -199,7 +202,7 @@ class Batcher(object):
 
                 batch_data['label_indices'] = []
                 for element in current:
-                    batch_data['label_indices'].append(utils.pad_list(element.label_indices, max_token_size, 0))
+                    batch_data['label_indices'].append(utils.pad_list(element.label_indices, max_token_size, -1000))
 
                 max_char_size = 0
                 for element in current:
@@ -244,7 +247,7 @@ class Batcher(object):
                     input_threads.append(t)
                 else:
                     tf.logging.error('Found input thread dead.')
-                    new_t = Thread(target=self._FillInputQueue)
+                    new_t = Process(target=self._FillInputQueue)
                     input_threads.append(new_t)
                     input_threads[-1].daemon = True
                     input_threads[-1].start()
@@ -256,8 +259,21 @@ class Batcher(object):
                     bucketing_threads.append(t)
                 else:
                     tf.logging.error('Found bucketing thread dead.')
-                    new_t = Thread(target=self._FillBucketInputQueue)
+                    new_t = Process(target=self._FillBucketInputQueue)
                     bucketing_threads.append(new_t)
                     bucketing_threads[-1].daemon = True
                     bucketing_threads[-1].start()
             self._bucketing_threads = bucketing_threads
+
+    def close(self):
+        self.__del__()
+
+    def __del__(self):
+        for t in self._input_threads:
+            t.join()
+        for t in self._bucketing_threads:
+            t.join()
+        self._input_queue.join_thread()
+#        self._input_queue.close()
+        self._bucket_input_queue.join_thread()
+#        self._bucket_input_queue.close()

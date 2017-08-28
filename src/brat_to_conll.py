@@ -264,6 +264,7 @@ def brat_to_conll(input_folder, output_filepath, tokenizer, language):
             #output_text += '\n'
             output_file.write("\n")
         #output_file.write(output_text)
+        pool.join()
 
     output_file.close()
     print('Done.')

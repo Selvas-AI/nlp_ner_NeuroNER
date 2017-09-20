@@ -18,16 +18,11 @@ import glob
 import re
 import time
 from collections import namedtuple
-from random import shuffle
-#from threading import Thread
 from multiprocessing import Process, Queue
-
-
+from random import shuffle
 
 import numpy as np
 import tensorflow as tf
-#from six.moves import queue as Queue
-#from six.moves import xrange
 
 import utils
 
@@ -83,9 +78,9 @@ class Batcher(object):
             self._bucketing_threads[-1].daemon = True
             self._bucketing_threads[-1].start()
 
-        #self._watch_thread = Process(target=self._WatchThreads)
-        #self._watch_thread.daemon = True
-        #self._watch_thread.start()
+            # self._watch_thread = Process(target=self._WatchThreads)
+            # self._watch_thread.daemon = True
+            # self._watch_thread.start()
 
     def next(self):
         batch_data = self._bucket_input_queue.get()
@@ -270,10 +265,10 @@ class Batcher(object):
 
     def __del__(self):
         for t in self._input_threads:
+            t.terminate()
             t.join()
         for t in self._bucketing_threads:
+            t.terminate()
             t.join()
-        self._input_queue.join_thread()
-#        self._input_queue.close()
-        self._bucket_input_queue.join_thread()
-#        self._bucket_input_queue.close()
+        self._input_queue.close()
+        self._bucket_input_queue.close()

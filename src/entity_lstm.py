@@ -11,7 +11,7 @@ import utils_tf
 
 
 def bidirectional_LSTM(input, training, hidden_state_dimension, initializer, sequence_length=None,
-                       output_sequence=True, use_bnlstm=False):
+                       output_sequence=True, lstm_cell_type='lstm'):
     with tf.variable_scope("bidirectional_LSTM"):
         if sequence_length == None:
             batch_size = 1
@@ -25,12 +25,15 @@ def bidirectional_LSTM(input, training, hidden_state_dimension, initializer, seq
         for direction in ["forward", "backward"]:
             with tf.variable_scope(direction):
                 # LSTM cell
-                if use_bnlstm:
+                if lstm_cell_type == 'bnlstm':
                     lstm_cell[direction] = bnlstm.BN_LSTMCell(hidden_state_dimension,
                                                               training,
                                                               forget_bias=1.0,
                                                               initializer=initializer,
                                                               state_is_tuple=True)
+                elif lstm_cell_type == 'lnlstm':
+                    lstm_cell[direction] = tf.contrib.rnn.LayerNormBasicLSTMCell(hidden_state_dimension,
+                                                                                 forget_bias=1.0,)
                 else:
                     lstm_cell[direction] = tf.contrib.rnn.CoupledInputForgetGateLSTMCell(hidden_state_dimension,
                                                                                          forget_bias=1.0,
@@ -97,7 +100,7 @@ def MultiBlstm(input, input_seq_lengths, dropout_keep_prob, training, initialize
                                                        hd, initializer,
                                                        sequence_length=input_seq_lengths,
                                                        output_sequence=True,
-                                                       use_bnlstm=parameters['use_bnlstm'])
+                                                       lstm_cell_type=parameters['lstm_cell_type'])
                 if 'token_lstm_variables' in locals():
                     token_lstm_variables += tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=vs.name)
                 else:

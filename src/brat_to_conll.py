@@ -4,9 +4,11 @@ import glob
 import json
 import multiprocessing
 import os
+import string
 from functools import partial
 from multiprocessing.pool import ThreadPool
 
+import re
 import spacy
 import psutil
 import utils_nlp
@@ -16,6 +18,9 @@ from korean_nlp import pos_analyze
 from tqdm import tqdm
 from colorama import init
 
+
+MAX_SENTNECE_LEN = 500
+MAX_WORD_LEN = 20
 
 def get_start_and_end_offset_of_token_from_spacy(token):
     start = token.idx
@@ -139,29 +144,59 @@ def limit_cpu():
     # set to lowest priority, this is windows only, on Unix use ps.nice(19)
     p.nice(psutil.HIGH_PRIORITY_CLASS)
 
-POS_TO_INDICIES = {}
-POS_TO_INDICIES_index = 0
-'''
-POS_TO_INDICIES = {"N" : 0,
-"P" : 1,
-"M": 2,
-"I": 3,
-"J": 4,
-"E": 5,
-"X": 6,
-"U": 7,
-"S": 8,
-"F": 9,
-'NN' : 10}
-'''
 
-def get_sentences_and_tokens_from_korean(text, korean_nlp):
-    global POS_TO_INDICIES_index
+POS_TO_INDICIES = {
+"Noun" : 1,
+"Verb" : 2,
+"Adjective" : 3,
+"Adverb" : 4,
+"Determiner" : 5,
+"Exclamation" : 6,
+"Josa" : 7,
+"Eomi" : 8,
+"PreEomi" : 9,
+"Conjunction" : 10,
+"NounPrefix" : 11,
+"VerbPrefix" : 12,
+"Suffix" : 13,
+"Unknown" : 14,
+"Korean" : 15,
+"Foreign" : 16,
+"Number" : 17,
+"KoreanParticle" : 18,
+"Alpha" : 19,
+"Punctuation" : 20,
+"Hashtag" : 21,
+"ScreenName" : 22,
+"Email" : 23,
+"URL" : 24,
+"CashTag" : 25,
+"Space" : 26,
+"Others" : 27,
+"ProperNoun;" : 28}
+
+
+hangul = re.compile('[^ㄱ-ㅎ가-힣a-zA-Z' + string.punctuation + ']')
+
+
+def get_sentences_and_tokens_from_korean(text):
     sentences = []
     last_index = 0
     line_size = 0
 
-    for line in tqdm(text.splitlines(), desc='lines'):
+    for line in text.splitlines():
+        '''
+        line = " · ".join(line.split('·'))
+        line = " ( ".join(line.split('('))
+        line = " ) ".join(line.split(')'))
+        '''
+        #line = line.replace('·', ' ')
+        #line = line.replace('(', ' ')
+        #line = line.replace(')', ' ')
+
+        break_for_loop = False
+        if bool(hangul.match(line)) or len(line) > MAX_SENTNECE_LEN:
+            break_for_loop = True
         pos_info = pos_analyze(line)
         sentence_tokens = []
 
@@ -171,12 +206,9 @@ def get_sentences_and_tokens_from_korean(text, korean_nlp):
                 token_dict['start'] = last_index
                 token_dict['end'] = last_index + len(token[0])
                 token_dict['text'] = token[0]
-                if token[1] in POS_TO_INDICIES:
-                    token_dict['pos'] = POS_TO_INDICIES[token[1]]
-                else:
-                    token_dict['pos'] = POS_TO_INDICIES_index
-                    POS_TO_INDICIES[token[1]] = POS_TO_INDICIES_index
-                    POS_TO_INDICIES_index += 1
+                if len(token[0]) > MAX_WORD_LEN:
+                    break_for_loop = True
+                token_dict['pos'] = POS_TO_INDICIES[token[1]]
 
                 token_dict['space'] = 1 if token_index == len(pos) - 1 else 0
                 if text[token_dict['start']:token_dict['end']] != token_dict['text']:
@@ -199,12 +231,12 @@ def get_sentences_and_tokens_from_korean(text, korean_nlp):
                     raise Exception
                 sentence_tokens.append(token_dict)
             last_index += 1
+        # last_index += 1
         # 문제를 확인하기 힘들게 될수 있으니, 아래 코드를 제거하고 시간날때 정리해야함
         line_size += len(line) + 1
         last_index = line_size
-        sentences.append(sentence_tokens)
-        line = None
-        pos_info = None
+        if not break_for_loop:
+            sentences.append(sentence_tokens)
     return sentences
 
 def brat_to_conll(input_folder, output_filepath, tokenizer, language):
@@ -243,7 +275,7 @@ def brat_to_conll(input_folder, output_filepath, tokenizer, language):
         elif tokenizer == 'stanford':
             sentences = get_sentences_and_tokens_from_stanford(text, core_nlp)
         elif tokenizer == 'korean':
-            sentences = get_sentences_and_tokens_from_korean(text, korean_nlp)
+            sentences = get_sentences_and_tokens_from_korean(text)
 
         output_text = ""
         hit_map = [None for _ in range(sentences[-1][-1]['end'] + 1)]

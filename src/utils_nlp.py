@@ -25,7 +25,7 @@ def load_tokens_from_pretrained_token_embeddings(parameters):
 
 
 def load_pretrained_token_embeddings(parameters):
-    file_input = codecs.open(parameters['token_pretrained_embedding_filepath'], 'r', 'UTF-8')
+    file_input = open(parameters['token_pretrained_embedding_filepath'], 'r', encoding='UTF-8')
     count = -1
     token_to_vector = {}
     for cur_line in file_input:

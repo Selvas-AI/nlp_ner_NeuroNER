@@ -93,7 +93,9 @@ class NeuroNER(object):
                       'space_tag_include' : True,
                       'morpheme_tag_include' : True,
                       'skip_data_compatibility' : False,
-                      'use_bnlstm' : False,
+                      'lstm_cell_type': 'lstm',
+                      'batch_size': 1,
+                      'limit_word_size': 0
                       }
         # If a parameter file is specified, load it
         if len(parameters_filepath) > 0:
@@ -124,7 +126,7 @@ class NeuroNER(object):
             elif k in ['remap_unknown_tokens_to_unk', 'use_character_lstm', 'use_crf', 'train_model', 'use_pretrained_model', 'debug', 'verbose',
                        'reload_character_embeddings', 'reload_character_lstm', 'reload_token_embeddings', 'reload_token_lstm', 'reload_feedforward', 'reload_crf',
                        'check_for_lowercase', 'check_for_digits_replaced_with_zeros', 'freeze_token_embeddings', 'load_only_pretrained_token_embeddings', 'load_all_pretrained_token_embeddings',
-                       'skip_data_compatibility', 'morpheme_tag_include', 'space_tag_include', 'use_bnlstm']:
+                       'skip_data_compatibility', 'morpheme_tag_include', 'space_tag_include' ]:
                 parameters[k] = distutils.util.strtobool(v)
         # If loading pretrained model, set the model hyperparameters according to the pretraining parameters
         if parameters['use_pretrained_model']:

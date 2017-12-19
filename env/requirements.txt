@@ -1,0 +1,13 @@
+networkx
+matplotlib
+scikit-learn
+scipy
+pycorenlp
+konlpy
+tqdm
+tensorflow
+flask
+flask_restful
+tensorflow
+JPype1
+colorama

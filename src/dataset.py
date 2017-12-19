@@ -86,7 +86,7 @@ class Dataset(object):
         character_to_index = self.character_to_index
         label_to_index = self.label_to_index
         index_to_label = self.index_to_label
-        
+        len_char = max(self.index_to_character.keys())
         # Map tokens and labels to their indices
         token_indices = {}
         label_indices = {}
@@ -103,7 +103,7 @@ class Dataset(object):
             for token_sequence in tokens[dataset_type]:
                 token_indices[dataset_type].append([token_to_index.get(token, self.UNK_TOKEN_INDEX) for token in token_sequence])
                 characters[dataset_type].append([list(token) for token in token_sequence])
-                character_indices[dataset_type].append([[character_to_index.get(character, random.randint(1, max(self.index_to_character.keys()))) for character in token] for token in token_sequence])
+                character_indices[dataset_type].append([[character_to_index.get(character, random.randint(1, len_char)) for character in token] for token in token_sequence])
                 token_lengths[dataset_type].append([len(token) for token in token_sequence])
                 longest_token_length_in_sequence = max(token_lengths[dataset_type][-1])
                 character_indices_padded[dataset_type].append([utils.pad_list(temp_token_indices, longest_token_length_in_sequence, self.PADDING_CHARACTER_INDEX) for temp_token_indices in character_indices[dataset_type][-1]])
@@ -145,11 +145,27 @@ class Dataset(object):
         dataset_filepaths : dictionary with keys 'train', 'valid', 'test', 'deploy'
         Overwrites the data of type specified in dataset_types using the existing token_to_index, character_to_index, and label_to_index mappings. 
         '''
+        spaceses = {}
+        poses = {}
         for dataset_type in dataset_types:
-            self.labels[dataset_type], self.tokens[dataset_type], _, _, _ = self._parse_dataset(dataset_filepaths.get(dataset_type, None))
+                    self.labels[dataset_type], self.tokens[dataset_type], spaceses[dataset_type], poses[dataset_type], current_number_of_pos_classes, _, _, _ = self._parse_dataset(dataset_filepaths.get(dataset_type, None))
         
         token_indices, label_indices, character_indices_padded, character_indices, token_lengths, characters, label_vector_indices = self._convert_to_indices(dataset_types)
-        
+
+        token_morpheme_indices = {}
+        for dataset_type in dataset_types:
+            token_morpheme_indices[dataset_type] = []
+            for pos in poses[dataset_type]:
+                pos_a = []
+                for e in pos:
+                    pos_a_b = [self.PADDING_POS_INDEX] * self.number_of_pos_classes
+                    pos_a_b[e] = 1
+                    pos_a.append(pos_a_b)
+                token_morpheme_indices[dataset_type].append(pos_a)
+
+        self.token_morpheme_indices = token_morpheme_indices
+        self.space_indices = spaceses
+
         self.token_indices.update(token_indices)
         self.label_indices.update(label_indices)
         self.character_indices_padded.update(character_indices_padded)
@@ -404,3 +420,15 @@ class Dataset(object):
 
         return token_to_vector
 
+    def clear_data(self):
+        self.label_indices = {}
+        self.character_indices_padded = {}
+        self.character_indices = {}
+        self.label_to_index = {}
+        self.label_vector_indices = {}
+        self.characters = {}
+        self.space_indices = {}
+        self.token_indices = {}
+        self.token_lengths = {}
+        self.token_morpheme_indices = {}
+        self.tokens = {}

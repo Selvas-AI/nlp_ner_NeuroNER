@@ -22,7 +22,7 @@ class BatchInputGenerator(object):
         return len(self.dataset.token_indices[self.dataset_type])
 
     def next(self):
-        if self.data_count > len(self.permutation_index):
+        if self.data_count >= len(self.permutation_index):
             return None
         batch_index = []
         for i in range(self.batch_size):

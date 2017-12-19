@@ -9,13 +9,11 @@ from functools import partial
 from multiprocessing.pool import ThreadPool
 
 import re
-import spacy
-import psutil
+#import spacy
 import utils_nlp
 from pycorenlp import StanfordCoreNLP
 
 from korean_nlp import pos_analyze
-from tqdm import tqdm
 from colorama import init
 
 
@@ -138,13 +136,6 @@ def check_brat_annotation_and_text_compatibility(brat_folder):
     print("Done.")
 
 
-def limit_cpu():
-    "is called at every process start"
-    p = psutil.Process(os.getpid())
-    # set to lowest priority, this is windows only, on Unix use ps.nice(19)
-    p.nice(psutil.HIGH_PRIORITY_CLASS)
-
-
 POS_TO_INDICIES = {
 "Noun" : 1,
 "Verb" : 2,
@@ -156,7 +147,7 @@ POS_TO_INDICIES = {
 "Eomi" : 8,
 "PreEomi" : 9,
 "Conjunction" : 10,
-"NounPrefix" : 11,
+"Modifier" : 11,
 "VerbPrefix" : 12,
 "Suffix" : 13,
 "Unknown" : 14,
@@ -176,7 +167,7 @@ POS_TO_INDICIES = {
 "ProperNoun;" : 28}
 
 
-hangul = re.compile('[^ㄱ-ㅎ가-힣a-zA-Z' + string.punctuation + ']')
+hangul = re.compile('[^ㄱ-ㅎ가-힣a-zA-Z\d\s' + string.punctuation + ']')
 
 
 def get_sentences_and_tokens_from_korean(text):
@@ -185,17 +176,9 @@ def get_sentences_and_tokens_from_korean(text):
     line_size = 0
 
     for line in text.splitlines():
-        '''
-        line = " · ".join(line.split('·'))
-        line = " ( ".join(line.split('('))
-        line = " ) ".join(line.split(')'))
-        '''
-        #line = line.replace('·', ' ')
-        #line = line.replace('(', ' ')
-        #line = line.replace(')', ' ')
-
         break_for_loop = False
-        if bool(hangul.match(line)) or len(line) > MAX_SENTNECE_LEN:
+        #if bool(hangul.search(line)) or len(line) > MAX_SENTNECE_LEN:
+        if len(line) > MAX_SENTNECE_LEN:
             break_for_loop = True
         pos_info = pos_analyze(line)
         sentence_tokens = []
@@ -246,7 +229,8 @@ def brat_to_conll(input_folder, output_filepath, tokenizer, language):
     '''
     init(autoreset=True)
     if tokenizer == 'spacy':
-        spacy_nlp = spacy.load(language)
+        #spacy_nlp = spacy.load(language)
+        spacy_nlp = None
     elif tokenizer == 'stanford':
         core_nlp = StanfordCoreNLP('http://localhost:{0}'.format(9000))
     elif tokenizer == 'korean':
@@ -260,7 +244,7 @@ def brat_to_conll(input_folder, output_filepath, tokenizer, language):
     text_filepaths = sorted(glob.glob(os.path.join(input_folder, '*.txt')))
     #text_filepaths=list(glob.iglob('%s/**/*.txt' % input_folder, recursive=True))
     output_file = codecs.open(output_filepath, 'w', 'utf-8')
-    for text_filepath in tqdm(text_filepaths, desc='files'):
+    for text_filepath in text_filepaths:
         base_filename = os.path.splitext(os.path.basename(text_filepath))[0]
         annotation_filepath = os.path.join(os.path.dirname(text_filepath), base_filename + '.ann')
         # create annotation file if it does not exist
@@ -286,11 +270,11 @@ def brat_to_conll(input_folder, output_filepath, tokenizer, language):
                 #hit_map[index] = entity['type'].replace('-', '_')
                 hit_map[index] = entity
 
-        pool = ThreadPool(64, limit_cpu)
+        pool = ThreadPool(64)
         partial_parse_token = partial(parse_token, base_filename=base_filename, entities=entities, hit_map=hit_map, verbose=verbose)
         result = pool.imap(partial_parse_token, sentences)
 
-        for _ in tqdm(range(len(sentences)), desc='sentences'):
+        for _ in range(len(sentences)):
             output_file.write(result.next())
             if verbose: print('\n')
             #output_text += '\n'

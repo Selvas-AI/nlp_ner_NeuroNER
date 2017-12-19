@@ -40,10 +40,10 @@ def prediction_step(sess, big, dataset, dataset_type, model, transition_params_t
     output_file = codecs.open(output_filepath, 'w', 'UTF-8')
     original_conll_file = codecs.open(dataset_filepaths[dataset_type], 'r', 'UTF-8')
 
-    bar = tqdm(total=int(big[dataset_type].size() / big[dataset_type].batch_size))
+    #bar = tqdm(total=int(big[dataset_type].size() / big[dataset_type].batch_size))
     big[dataset_type].begin(False)
     while True:
-        bar.update(1)
+        #bar.update(1)
         batch_input = big[dataset_type].next()
         if batch_input is None:
             break
@@ -99,7 +99,7 @@ def prediction_step(sess, big, dataset, dataset_type, model, transition_params_t
             all_predictions.extend(predictions)
             all_y_true.extend(dataset.label_indices[dataset_type][i])
 
-    bar.close()
+    #bar.close()
     output_file.close()
     original_conll_file.close()
 

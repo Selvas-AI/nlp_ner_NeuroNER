@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from konlpy.tag import Twitter
+from twitter.pyokt.twitter import Twitter
 
 twitter = Twitter()
 
@@ -9,16 +9,11 @@ def pos_analyze(sentence):
     output = []
     eoj = []
     pos_list = twitter.pos(sentence)
-    begin = 0
-    for idx, pos in enumerate(pos_list):
-        while True:
-            if not sentence[begin:].startswith(pos[0]):
-                begin += 1
-            break
-        end = begin + len(pos[0])
-        eoj.append([pos[0], pos[1]])
-        if end == len(sentence) or sentence[end] == ' ':
+    for pos in pos_list:
+        if pos.pos == 'Space':
             output.append(eoj)
             eoj = []
-        begin = end
+        else:
+            eoj.append([pos.text, pos.pos])
+    output.append(eoj)
     return output

@@ -1,3 +1,4 @@
+# -*- coding: utf-8-*-
 import numpy as np
 import matplotlib.pyplot as plt
 import sklearn.metrics
@@ -38,7 +39,7 @@ def assess_model(y_pred, y_true, labels, target_names, labels_with_o, target_nam
     xlabel = 'Predicted'
     ylabel = 'True'
     xticklabels = yticklabels = target_names_with_o
-    utils_plots.heatmap(confusion_matrix, title, xlabel, ylabel, xticklabels, yticklabels, figure_width=40, figure_height=20, correct_orientation=True, fmt="%d", 
+    utils_plots.heatmap(confusion_matrix, title, xlabel, ylabel, xticklabels, yticklabels, figure_width=40, figure_height=20, correct_orientation=True, fmt="%d",
                         remove_diagonal=True)
     plt.savefig(os.path.join(stats_graph_folder, 'confusion_matrix_for_epoch_{0:04d}_in_{1}_{2}_evaluation.{3}'.format(epoch_number, dataset_type,
                                                                                                                        evaluation_mode, parameters['plot_format'])),
@@ -150,7 +151,7 @@ def result_to_plot(folder_name=None):
             plot_f1_vs_epoch(result, subfolder_filepath, metric, from_json=True)
 
 
-def remap_labels(y_pred, y_true, dataset, evaluation_mode='bio'):
+def remap_labels(y_pred, y_true, metadata, evaluation_mode='bio'):
     '''
     y_pred: list of predicted labels
     y_true: list of gold labels
@@ -159,7 +160,7 @@ def remap_labels(y_pred, y_true, dataset, evaluation_mode='bio'):
     Both y_pred and y_true must use label indices and names specified in the dataset
 #     (dataset.unique_label_indices_of_interest, dataset.unique_label_indices_of_interest).
     '''
-    all_unique_labels = dataset.unique_labels
+    all_unique_labels = list(metadata['label_to_index'].keys())
     if evaluation_mode == 'bio':
         # sort label to index
         new_label_names = all_unique_labels[:]
@@ -171,7 +172,7 @@ def remap_labels(y_pred, y_true, dataset, evaluation_mode='bio'):
 
         remap_index = {}
         for i, label_name in enumerate(new_label_names):
-            label_index = dataset.label_to_index[label_name]
+            label_index = metadata['label_to_index'][label_name]
             remap_index[label_index] = i
 
     elif evaluation_mode == 'token':
@@ -188,7 +189,7 @@ def remap_labels(y_pred, y_true, dataset, evaluation_mode='bio'):
         remap_index = {}
         for label_name in all_unique_labels:
             new_label_name = utils_nlp.remove_bio_from_label_name(label_name)
-            label_index = dataset.label_to_index[label_name]
+            label_index = metadata['label_to_index'][label_name]
             remap_index[label_index] = new_label_to_index[new_label_name]
 
     elif evaluation_mode == 'binary':
@@ -201,7 +202,7 @@ def remap_labels(y_pred, y_true, dataset, evaluation_mode='bio'):
             new_label_name = 'O'
             if label_name != 'O':
                 new_label_name = 'NAMED_ENTITY'
-            label_index = dataset.label_to_index[label_name]
+            label_index = metadata['label_to_index'][label_name]
             remap_index[label_index] = new_label_to_index[new_label_name]
 
     else:
@@ -218,7 +219,7 @@ def remap_labels(y_pred, y_true, dataset, evaluation_mode='bio'):
     return new_y_pred, new_y_true, new_label_indices, new_label_names, new_label_indices_with_o, new_label_names_with_o
 
 
-def evaluate_model(results, dataset, y_pred_all, y_true_all, stats_graph_folder, epoch_number, epoch_start_time, output_filepaths, parameters, verbose=False):
+def evaluate_model(results, metadata, y_pred_all, y_true_all, stats_graph_folder, epoch_number, epoch_start_time, output_filepaths, parameters, verbose=False):
     results['execution_details']['num_epochs'] = epoch_number
     results['epoch'][epoch_number] = []
     result_update = {}
@@ -232,7 +233,7 @@ def evaluate_model(results, dataset, y_pred_all, y_true_all, stats_graph_folder,
         y_true_original = y_true_all[dataset_type]
 
         for evaluation_mode in ['bio', 'token', 'binary']:
-            y_pred, y_true, label_indices, label_names, label_indices_with_o, label_names_with_o = remap_labels(y_pred_original, y_true_original, dataset,
+            y_pred, y_true, label_indices, label_names, label_indices_with_o, label_names_with_o = remap_labels(y_pred_original, y_true_original, metadata,
                                                                                                                 evaluation_mode=evaluation_mode)
             result_update[dataset_type][evaluation_mode] = assess_model(y_pred, y_true, label_indices, label_names, label_indices_with_o, label_names_with_o,
                                                                         dataset_type, stats_graph_folder, epoch_number,  parameters, evaluation_mode=evaluation_mode,
@@ -269,7 +270,7 @@ def evaluate_model(results, dataset, y_pred_all, y_true_all, stats_graph_folder,
                         dpi=300, format=parameters['plot_format'], bbox_inches='tight')
             plt.close()
 
-    if  parameters['train_model'] and 'train' in output_filepaths.keys() and 'valid' in output_filepaths.keys():
+    if  parameters['mode'] == 'train' and 'train' in output_filepaths.keys() and 'valid' in output_filepaths.keys():
         plot_f1_vs_epoch(results, stats_graph_folder, 'f1_score', parameters)
         plot_f1_vs_epoch(results, stats_graph_folder, 'accuracy_score', parameters)
         plot_f1_vs_epoch(results, stats_graph_folder, 'f1_conll', parameters)

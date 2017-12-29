@@ -1,13 +1,12 @@
+# -*- coding: utf-8-*-
 import os
-import pickle
 import re
 import time
 
-import bnlstm
 import tensorflow as tf
 
-import utils_nlp
-import utils_tf
+import bnlstm
+import utils
 
 
 def bidirectional_LSTM(input, training, hidden_state_dimension, initializer, sequence_length=None,
@@ -33,7 +32,7 @@ def bidirectional_LSTM(input, training, hidden_state_dimension, initializer, seq
                                                               state_is_tuple=True)
                 elif lstm_cell_type == 'lnlstm':
                     lstm_cell[direction] = tf.contrib.rnn.LayerNormBasicLSTMCell(hidden_state_dimension,
-                                                                                 forget_bias=1.0,)
+                                                                                 forget_bias=1.0, )
                 else:
                     lstm_cell[direction] = tf.contrib.rnn.CoupledInputForgetGateLSTMCell(hidden_state_dimension,
                                                                                          forget_bias=1.0,
@@ -108,6 +107,26 @@ def MultiBlstm(input, input_seq_lengths, dropout_keep_prob, training, initialize
     return token_lstm_output, hd, token_lstm_variables
 
 
+def variable_summaries(var):
+    '''
+    Attach a lot of summaries to a Tensor (for TensorBoard visualization).
+    From https://www.tensorflow.org/get_started/summaries_and_tensorboard
+    '''
+    with tf.name_scope('summaries'):
+        mean = tf.reduce_mean(var)
+        tf.summary.scalar('mean', mean)
+        with tf.name_scope('stddev'):
+            stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+        tf.summary.scalar('stddev', stddev)
+        tf.summary.scalar('max', tf.reduce_max(var))
+        tf.summary.scalar('min', tf.reduce_min(var))
+        tf.summary.histogram('histogram', var)
+
+
+def resize_tensor_variable(sess, tensor_variable, shape):
+    sess.run(tf.assign(tensor_variable, tf.zeros(shape), validate_shape=False))
+
+
 class EntityLSTM(object):
     """
     An LSTM architecture for named entity recognition.
@@ -115,19 +134,22 @@ class EntityLSTM(object):
     Then the character vector is concatenated with token embedding vector, which is input to another LSTM  followed by a CRF layer.
     """
 
-    def __init__(self, dataset, parameters):
+    def __init__(self, parameters, metadata, use_external_embedding=False):
+        num_of_char = metadata['num_of_char']
+        num_of_token = metadata['num_of_token']
+        num_of_label = metadata['num_of_label']
+        num_of_extendeds = metadata['num_of_extendeds']
 
         self.verbose = False
-        self.batch_size = int(parameters['batch_size'])
+        self.batch_size = parameters['batch_size']
         # Placeholders for input, output and dropout
-        self.input_token_indices = tf.placeholder(tf.int32, [self.batch_size, None], name="input_token_indices")
-        self.input_token_space_indices = tf.placeholder(tf.float32, [self.batch_size, None],
-                                                        name="input_token_space_indices")
-        self.input_token_morpheme_indices = tf.placeholder(tf.float32,
-                                                           [self.batch_size, None, dataset.number_of_pos_classes],
-                                                           name="input_token_morpheme_indices")
-        self.input_label_indices_vector = tf.placeholder(tf.float32, [self.batch_size, None, dataset.number_of_classes],
-                                                         name="input_label_indices_vector")
+        if use_external_embedding:
+            self.input_token_indices = tf.placeholder(tf.float32, (self.batch_size, None, parameters['token_embedding_dimension']),
+                                         "input_token_indices")
+        else:
+            self.input_token_indices = tf.placeholder(tf.int32, [self.batch_size, None], name="input_token_indices")
+        self.input_extended_sequence = tf.placeholder(tf.int32, [self.batch_size, None, None],
+                                                      name="input_token_space_indices")
         self.input_label_indices_flat = tf.placeholder(tf.int32, [self.batch_size, None],
                                                        name="input_label_indices_flat")
         self.input_token_character_indices = tf.placeholder(tf.int32, [self.batch_size, None, None],
@@ -140,6 +162,7 @@ class EntityLSTM(object):
         # Internal parameters
         initializer = tf.contrib.layers.xavier_initializer()
 
+        itl_shape = tf.shape(self.input_token_lengths)
         if parameters['use_character_lstm']:
             # Character-level LSTM
             # Idea: reshape so that we have a tensor [number_of_token, max_token_length, token_embeddings_size], which we pass to the LSTM
@@ -148,7 +171,7 @@ class EntityLSTM(object):
             with tf.variable_scope("character_embedding"):
                 self.character_embedding_weights = tf.get_variable(
                     "character_embedding_weights",
-                    shape=[dataset.alphabet_size, parameters['character_embedding_dimension']],
+                    shape=[num_of_char, parameters['character_embedding_dimension']],
                     initializer=initializer)
                 itci_shape = tf.shape(self.input_token_character_indices)
                 reshaped_itci = tf.reshape(self.input_token_character_indices,
@@ -157,11 +180,10 @@ class EntityLSTM(object):
                                                              reshaped_itci,
                                                              name='embedded_characters')
                 if self.verbose: print("embedded_characters: {0}".format(embedded_characters))
-                utils_tf.variable_summaries(self.character_embedding_weights)
+                variable_summaries(self.character_embedding_weights)
 
             # Character LSTM layer
             with tf.variable_scope('character_lstm') as vs:
-                itl_shape = tf.shape(self.input_token_lengths)
                 reshaped_itl = tf.reshape(self.input_token_lengths,
                                           [itl_shape[0] * itl_shape[1]])
                 character_lstm_output = bidirectional_LSTM(embedded_characters,
@@ -177,30 +199,30 @@ class EntityLSTM(object):
 
         # Token embedding layer
         with tf.variable_scope("token_embedding"):
-            self.token_embedding_weights = tf.get_variable(
-                "token_embedding_weights",
-                shape=[dataset.vocabulary_size, parameters['token_embedding_dimension']],
-                initializer=initializer,
-                trainable=not parameters['freeze_token_embeddings'])
-            iti_shape = tf.shape(self.input_token_indices)
-            reshaped_iti = tf.reshape(self.input_token_indices,
-                                      [iti_shape[0] * iti_shape[1]])
-            embedded_tokens = tf.nn.embedding_lookup(self.token_embedding_weights, reshaped_iti)
+            if use_external_embedding:
+                embedded_tokens = self.input_token_indices
+            else:
+                self.token_embedding_weights = tf.get_variable(
+                    "token_embedding_weights",
+                    shape=[num_of_token, parameters['token_embedding_dimension']],
+                    initializer=initializer,
+                    trainable=not parameters['freeze_token_embeddings'])
+                iti_shape = tf.shape(self.input_token_indices)
+                reshaped_iti = tf.reshape(self.input_token_indices, [iti_shape[0] * iti_shape[1]])
+                embedded_tokens = tf.nn.embedding_lookup(self.token_embedding_weights, reshaped_iti)
+
             stacked_embedded_tokens = tf.reshape(embedded_tokens,
                                                  [itl_shape[0], itl_shape[1], parameters['token_embedding_dimension']])
-            utils_tf.variable_summaries(self.token_embedding_weights)
+            if not use_external_embedding:
+                variable_summaries(self.token_embedding_weights)
 
-        if parameters['morpheme_tag_include']:
-            stacked_embedded_tokens = tf.concat(
-                [stacked_embedded_tokens, self.input_token_morpheme_indices],
-                axis=2)
-
-        if parameters['space_tag_include']:
-            itsi_shape = tf.shape(self.input_token_space_indices)
-            reshaped_itsi = tf.reshape(self.input_token_space_indices, [itsi_shape[0], itsi_shape[1], 1])
-            stacked_embedded_tokens = tf.concat(
-                [stacked_embedded_tokens, reshaped_itsi],
-                axis=2)
+        ext_shape = tf.shape(self.input_extended_sequence)
+        splitted_extended_value = tf.split(self.input_extended_sequence, num_or_size_splits=len(num_of_extendeds), axis=2)
+        for ex_idx, extended in enumerate(splitted_extended_value):
+            with tf.variable_scope("extended_%d" % ex_idx):
+                reshaped_extended = tf.reshape(extended, [ext_shape[0], ext_shape[1]])
+                reshaped_extended_oh = tf.one_hot(reshaped_extended, num_of_extendeds[ex_idx])
+                stacked_embedded_tokens = tf.concat([stacked_embedded_tokens, reshaped_extended_oh], axis=2)
 
         # Concatenate character LSTM outputs and token embeddings
         if parameters['use_character_lstm']:
@@ -228,23 +250,23 @@ class EntityLSTM(object):
             reshaped_tlo = tf.reshape(token_lstm_output, [shape_tlo[0] * shape_tlo[1], shape_tlo[2]])
             outputs = tf.nn.xw_plus_b(reshaped_tlo, W, b, name="output_before_tanh")
             outputs = tf.nn.tanh(outputs, name="output_after_tanh")
-            utils_tf.variable_summaries(W)
-            utils_tf.variable_summaries(b)
+            variable_summaries(W)
+            variable_summaries(b)
             self.token_lstm_variables += tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=vs.name)
 
         with tf.variable_scope("feedforward_before_crf") as vs:
             W = tf.get_variable(
                 "W",
-                shape=[hidden_dim, dataset.number_of_classes],
+                shape=[hidden_dim, num_of_label],
                 initializer=initializer)
-            b = tf.Variable(tf.constant(0.0, shape=[dataset.number_of_classes]), name="bias")
+            b = tf.Variable(tf.constant(0.0, shape=[num_of_label]), name="bias")
             scores = tf.nn.xw_plus_b(outputs, W, b, name="scores")
             shape_scores = tf.shape(scores)
             self.unary_scores = tf.reshape(scores, [self.batch_size, tf.div(shape_scores[0], self.batch_size),
-                                                    dataset.number_of_classes])
+                                                    num_of_label])
             self.predictions = tf.argmax(self.unary_scores, 2, name="predictions")
-            utils_tf.variable_summaries(W)
-            utils_tf.variable_summaries(b)
+            variable_summaries(W)
+            variable_summaries(b)
             self.feedforward_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=vs.name)
 
         # CRF layer
@@ -253,18 +275,21 @@ class EntityLSTM(object):
                 # Add start and end tokens
                 small_score = -1000.0
                 large_score = 0.0
-                unary_scores_with_start_and_end = tf.concat([self.unary_scores,
-                                                             tf.tile(tf.constant(small_score, shape=[1, 1, 2]),
-                                                                     [tf.shape(self.unary_scores)[0],
-                                                                      tf.shape(self.unary_scores)[1], 1])], 2)
-                start_unary_scores = [[[small_score] * dataset.number_of_classes + [large_score,
-                                                                                    small_score]]] * self.batch_size
-                end_unary_scores = [[[small_score] * dataset.number_of_classes + [small_score,
-                                                                                  large_score]]] * self.batch_size
+
+                unary_scores_with_start_and_end = tf.concat(
+                    [self.unary_scores, tf.tile(tf.constant(small_score, shape=[1, 1, 2]),
+                                                [tf.shape(self.unary_scores)[0], tf.shape(self.unary_scores)[1], 1])],
+                    2)
+
+                start_unary_scores = [[[small_score] * num_of_label + [large_score,
+                                                                       small_score]]] * self.batch_size
+                end_unary_scores = [[[small_score] * num_of_label + [small_score,
+                                                                     large_score]]] * self.batch_size
                 self.unary_scores = tf.concat([start_unary_scores, unary_scores_with_start_and_end, end_unary_scores],
                                               1)
-                start_index = dataset.number_of_classes
-                end_index = dataset.number_of_classes + 1
+
+                start_index = num_of_label
+                end_index = num_of_label + 1
                 input_label_indices_flat_with_start_and_end = tf.concat(
                     [tf.constant(start_index, shape=[self.batch_size, 1]), self.input_label_indices_flat,
                      tf.constant(end_index, shape=[self.batch_size, 1])], 1)
@@ -278,9 +303,9 @@ class EntityLSTM(object):
                 # Compute the log-likelihood of the gold sequences and keep the transition params for inference at test time.
                 self.transition_parameters = tf.get_variable(
                     "transitions",
-                    shape=[dataset.number_of_classes + 2, dataset.number_of_classes + 2],
+                    shape=[num_of_label + 2, num_of_label + 2],
                     initializer=initializer)
-                utils_tf.variable_summaries(self.transition_parameters)
+                variable_summaries(self.transition_parameters)
                 log_likelihood, _ = tf.contrib.crf.crf_log_likelihood(
                     self.unary_scores, input_label_indices_flat_with_start_and_end, self.input_seq_lengths,
                     transition_params=self.transition_parameters)
@@ -294,24 +319,24 @@ class EntityLSTM(object):
             with tf.variable_scope("crf") as vs:
                 self.transition_parameters = tf.get_variable(
                     "transitions",
-                    shape=[dataset.number_of_classes + 2, dataset.number_of_classes + 2],
+                    shape=[num_of_label + 2, num_of_label + 2],
                     initializer=initializer)
-                utils_tf.variable_summaries(self.transition_parameters)
+                variable_summaries(self.transition_parameters)
                 self.crf_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=vs.name)
 
             # Calculate mean cross-entropy loss
+            input_label_indices_vector_oh = tf.one_hot(self.input_label_indices_vector, num_of_label)
             with tf.variable_scope("loss"):
                 losses = tf.nn.softmax_cross_entropy_with_logits(logits=self.unary_scores,
-                                                                 labels=self.input_label_indices_vector, name='softmax')
+                                                                 labels=input_label_indices_vector_oh, name='softmax')
                 self.loss = tf.reduce_mean(losses, name='cross_entropy_mean_loss')
             with tf.variable_scope("accuracy"):
-                correct_predictions = tf.equal(self.predictions, tf.argmax(self.input_label_indices_vector, 2))
+                correct_predictions = tf.equal(self.predictions, tf.argmax(input_label_indices_vector_oh, 2))
                 self.accuracy = tf.reduce_mean(tf.cast(correct_predictions, 'float'), name='accuracy')
 
         self.define_training_procedure(parameters)
         self.summary_op = tf.summary.merge_all()
-        self.saver = tf.train.Saver(
-            max_to_keep=parameters['maximum_number_of_epochs'])  # defaults to saving all variables
+        self.saver = tf.train.Saver(max_to_keep=parameters['patience'] + 1)  # defaults to saving all variables
 
     def define_training_procedure(self, parameters):
         # Define training procedure
@@ -334,14 +359,15 @@ class EntityLSTM(object):
         # The global step will be automatically incremented by one every time you execute train_op.
         self.train_op = self.optimizer.apply_gradients(grads_and_vars, global_step=self.global_step)
 
-    def load_pretrained_token_embeddings(self, sess, dataset, parameters, token_to_vector=None):
+    def load_pretrained_token_embeddings(self, sess, parameters, metadata):
         if parameters['token_pretrained_embedding_filepath'] == '':
             return
+        if not os.path.exists(parameters['token_pretrained_embedding_filepath']):
+            raise Exception("Embedding file not exist")
         # Load embeddings
         start_time = time.time()
         print('Load token embeddings... ', end='', flush=True)
-        if token_to_vector == None:
-            token_to_vector = utils_nlp.load_pretrained_token_embeddings(parameters)
+        token_to_vector = utils.load_pretrained_token_embeddings(parameters['token_pretrained_embedding_filepath'])
 
         initial_weights = sess.run(self.token_embedding_weights.read_value())
         number_of_loaded_word_vectors = 0
@@ -349,20 +375,20 @@ class EntityLSTM(object):
         number_of_token_lowercase_found = 0
         number_of_token_digits_replaced_with_zeros_found = 0
         number_of_token_lowercase_and_digits_replaced_with_zeros_found = 0
-        for token in dataset.token_to_index.keys():
+        for token in metadata['token_to_index'].keys():
             if token in token_to_vector.keys():
-                initial_weights[dataset.token_to_index[token]] = token_to_vector[token]
+                initial_weights[metadata['token_to_index'][token]] = token_to_vector[token]
                 number_of_token_original_case_found += 1
             elif parameters['check_for_lowercase'] and token.lower() in token_to_vector.keys():
-                initial_weights[dataset.token_to_index[token]] = token_to_vector[token.lower()]
+                initial_weights[metadata['token_to_index'][token]] = token_to_vector[token.lower()]
                 number_of_token_lowercase_found += 1
             elif parameters['check_for_digits_replaced_with_zeros'] and re.sub('\d', '0',
                                                                                token) in token_to_vector.keys():
-                initial_weights[dataset.token_to_index[token]] = token_to_vector[re.sub('\d', '0', token)]
+                initial_weights[metadata['token_to_index'][token]] = token_to_vector[re.sub('\d', '0', token)]
                 number_of_token_digits_replaced_with_zeros_found += 1
             elif parameters['check_for_lowercase'] and parameters['check_for_digits_replaced_with_zeros'] and re.sub(
                     '\d', '0', token.lower()) in token_to_vector.keys():
-                initial_weights[dataset.token_to_index[token]] = token_to_vector[re.sub('\d', '0', token.lower())]
+                initial_weights[metadata['token_to_index'][token]] = token_to_vector[re.sub('\d', '0', token.lower())]
                 number_of_token_lowercase_and_digits_replaced_with_zeros_found += 1
             else:
                 continue
@@ -376,137 +402,10 @@ class EntityLSTM(object):
         print("number_of_token_lowercase_and_digits_replaced_with_zeros_found: {0}".format(
             number_of_token_lowercase_and_digits_replaced_with_zeros_found))
         print('number_of_loaded_word_vectors: {0}'.format(number_of_loaded_word_vectors))
-        print("dataset.vocabulary_size: {0}".format(dataset.vocabulary_size))
+        print("dataset.vocabulary_size: {0}".format(metadata['num_of_token']))
         sess.run(self.token_embedding_weights.assign(initial_weights))
 
-    def load_embeddings_from_pretrained_model(self, sess, dataset, pretraining_dataset, pretrained_embedding_weights,
-                                              embedding_type='token'):
-        if embedding_type == 'token':
-            embedding_weights = self.token_embedding_weights
-            index_to_string = dataset.index_to_token
-            pretraining_string_to_index = pretraining_dataset.token_to_index
-        elif embedding_type == 'character':
-            embedding_weights = self.character_embedding_weights
-            index_to_string = dataset.index_to_character
-            pretraining_string_to_index = pretraining_dataset.character_to_index
-        # Load embeddings
-        start_time = time.time()
-        print('Load {0} embeddings from pretrained model... '.format(embedding_type), end='', flush=True)
-        initial_weights = sess.run(embedding_weights.read_value())
-
-        if embedding_type == 'token':
-            initial_weights[dataset.UNK_TOKEN_INDEX] = pretrained_embedding_weights[pretraining_dataset.UNK_TOKEN_INDEX]
-        elif embedding_type == 'character':
-            initial_weights[dataset.PADDING_CHARACTER_INDEX] = pretrained_embedding_weights[
-                pretraining_dataset.PADDING_CHARACTER_INDEX]
-
-        number_of_loaded_vectors = 1
-        for index, string in index_to_string.items():
-            if index == dataset.UNK_TOKEN_INDEX:
-                continue
-            if string in pretraining_string_to_index.keys():
-                initial_weights[index] = pretrained_embedding_weights[pretraining_string_to_index[string]]
-                number_of_loaded_vectors += 1
-        elapsed_time = time.time() - start_time
-        print('done ({0:.2f} seconds)'.format(elapsed_time))
-        print("number_of_loaded_vectors: {0}".format(number_of_loaded_vectors))
-        if embedding_type == 'token':
-            print("dataset.vocabulary_size: {0}".format(dataset.vocabulary_size))
-        elif embedding_type == 'character':
-            print("dataset.alphabet_size: {0}".format(dataset.alphabet_size))
-        sess.run(embedding_weights.assign(initial_weights))
-
-    def load_model(self, parameters, sess):
-        pretrained_model_checkpoint_filepath = os.path.join(parameters['pretrained_model_folder'], 'model.ckpt')
-        self.saver.restore(sess, pretrained_model_checkpoint_filepath)  # Works only when the dimensions of tensor variables are matched.
-
-        # Get transition parameters
-        transition_params_trained = sess.run(self.transition_parameters)
-
-        if not parameters['reload_character_embeddings']:
-            sess.run(tf.variables_initializer([self.character_embedding_weights]))
-        if not parameters['reload_character_lstm']:
-            sess.run(tf.variables_initializer(self.character_lstm_variables))
-        if not parameters['reload_token_embeddings']:
-            sess.run(tf.variables_initializer([self.token_embedding_weights]))
-        if not parameters['reload_token_lstm']:
-            sess.run(tf.variables_initializer(self.token_lstm_variables))
-        if not parameters['reload_feedforward']:
-            sess.run(tf.variables_initializer(self.feedforward_variables))
-        if not parameters['reload_crf']:
-            sess.run(tf.variables_initializer(self.crf_variables))
-
-        return transition_params_trained
-
-    def restore_from_pretrained_model(self, parameters, dataset, sess, token_to_vector=None):
-        pretraining_dataset = pickle.load(open(os.path.join(parameters['pretrained_model_folder'], 'dataset.pickle'), 'rb'))
-        pretrained_model_checkpoint_filepath = os.path.join(parameters['pretrained_model_folder'], 'model.ckpt')
-
-        # Assert that the label sets are the same
-        # Test set should have the same label set as the pretrained dataset
-        assert pretraining_dataset.index_to_label == dataset.index_to_label
-
-        # If the token and character mappings are exactly the same
-        if pretraining_dataset.index_to_token == dataset.index_to_token and pretraining_dataset.index_to_character == dataset.index_to_character:
-
-            # Restore the pretrained model
-            self.saver.restore(sess,
-                               pretrained_model_checkpoint_filepath)  # Works only when the dimensions of tensor variables are matched.
-
-        # If the token and character mappings are different between the pretrained model and the current model
-        else:
-
-            # Resize the token and character embedding weights to match them with the pretrained model (required in order to restore the pretrained model)
-            utils_tf.resize_tensor_variable(sess, self.character_embedding_weights, [pretraining_dataset.alphabet_size,
-                                                                                     parameters[
-                                                                                         'character_embedding_dimension']])
-            utils_tf.resize_tensor_variable(sess, self.token_embedding_weights,
-                                            [pretraining_dataset.vocabulary_size, parameters['token_embedding_dimension']])
-
-            # Restore the pretrained model
-            self.saver.restore(sess,
-                               pretrained_model_checkpoint_filepath)  # Works only when the dimensions of tensor variables are matched.
-
-            # Get pretrained embeddings
-            character_embedding_weights, token_embedding_weights = sess.run(
-                [self.character_embedding_weights, self.token_embedding_weights])
-
-            # Restore the sizes of token and character embedding weights
-            utils_tf.resize_tensor_variable(sess, self.character_embedding_weights,
-                                            [dataset.alphabet_size, parameters['character_embedding_dimension']])
-            utils_tf.resize_tensor_variable(sess, self.token_embedding_weights,
-                                            [dataset.vocabulary_size, parameters['token_embedding_dimension']])
-
-            # Re-initialize the token and character embedding weights
-            sess.run(tf.variables_initializer([self.character_embedding_weights, self.token_embedding_weights]))
-
-            # Load embedding weights from pretrained token embeddings first
-            self.load_pretrained_token_embeddings(sess, dataset, parameters, token_to_vector=token_to_vector)
-
-            # Load embedding weights from pretrained model
-            self.load_embeddings_from_pretrained_model(sess, dataset, pretraining_dataset, token_embedding_weights,
-                                                       embedding_type='token')
-            self.load_embeddings_from_pretrained_model(sess, dataset, pretraining_dataset, character_embedding_weights,
-                                                       embedding_type='character')
-
-            del pretraining_dataset
-            del character_embedding_weights
-            del token_embedding_weights
-
-        # Get transition parameters
-        transition_params_trained = sess.run(self.transition_parameters)
-
-        if not parameters['reload_character_embeddings']:
-            sess.run(tf.variables_initializer([self.character_embedding_weights]))
-        if not parameters['reload_character_lstm']:
-            sess.run(tf.variables_initializer(self.character_lstm_variables))
-        if not parameters['reload_token_embeddings']:
-            sess.run(tf.variables_initializer([self.token_embedding_weights]))
-        if not parameters['reload_token_lstm']:
-            sess.run(tf.variables_initializer(self.token_lstm_variables))
-        if not parameters['reload_feedforward']:
-            sess.run(tf.variables_initializer(self.feedforward_variables))
-        if not parameters['reload_crf']:
-            sess.run(tf.variables_initializer(self.crf_variables))
-
-        return transition_params_trained
+    def load_model(self, pretrained_model_folder, sess):
+        pretrained_model_checkpoint_filepath = os.path.join(pretrained_model_folder, 'model.ckpt')
+        self.saver.restore(sess, pretrained_model_checkpoint_filepath)
+        return sess.run(self.transition_parameters)

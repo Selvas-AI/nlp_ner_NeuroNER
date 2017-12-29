@@ -1,3 +1,4 @@
+# -*- coding: utf-8-*-
 '''
 Miscellaneous functions for plots
 '''
@@ -33,7 +34,8 @@ def show_values(pc, fmt="%.2f", **kw):
     By HYRY
     '''
     pc.update_scalarmappable()
-    ax = pc.get_axes()
+    #ax = pc.get_axes()
+    ax = pc.axes
     for p, color, value in zip(pc.get_paths(), pc.get_facecolors(), pc.get_array()):
         x, y = p.vertices[:-2, :].mean(0)
         if np.all(color[:3] > 0.5):

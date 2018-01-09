@@ -1,3 +1,0 @@
-[submodule "src/twitter"]
-	path = src/twitter
-	url = http://gitlab.selvasai.com/nlp/twitter_moph_analyzer.git

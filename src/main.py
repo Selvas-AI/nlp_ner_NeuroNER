@@ -9,9 +9,10 @@ import utils
 from params import Configuration
 from neuroner import NeuroNER
 from src.metadata import Metadata
+from oktpy.twitter import TwitterMorphManager
 
 warnings.filterwarnings('ignore')
-
+TwitterMorphManager().morph_analyzer.pos("안녕하세요")
 
 def main():
     parser = argparse.ArgumentParser()

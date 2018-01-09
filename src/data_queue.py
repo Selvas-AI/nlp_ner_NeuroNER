@@ -11,7 +11,7 @@ import jpype
 import tensorflow as tf
 
 import preprocess
-from params import CONLL_DEFAULT_LENGTH
+from params import CONLL_DEFAULT_LENGTH, LIMIT_SEQUENCE_LENGTH
 
 
 class DataQueue(object):
@@ -105,6 +105,7 @@ class DataQueue(object):
 
                             token = str(line[0])
                             label = str(line[-1])
+                            token = preprocess.normalize_token(token)
                             token_sequence.append(token)
                             label_sequence.append(label)
                             conll_txt += line_raw + "\n"
@@ -119,9 +120,10 @@ class DataQueue(object):
                                 extended = [0]
                             extended_sequence.append(extended)
 
-                        if len(token_sequence) > 0:
+                        if 0 < len(token_sequence) and len(token_sequence) < LIMIT_SEQUENCE_LENGTH:
                             element = preprocess.encode(self._metadata, token_sequence, extended_sequence,
-                                                        label_sequence, conll_txt, expanded_embedding=self._expanded_embedding)
+                                                        label_sequence, conll_txt,
+                                                        expanded_embedding=self._expanded_embedding)
                             if element is not None: self._input_queue.put(element)
             if not self._is_train:
                 self._input_queue.put(None)
@@ -139,7 +141,8 @@ class DataQueue(object):
                 inputs.append(item)
             if self._is_train:
                 inputs = sorted(inputs, key=lambda inp: inp.sequence_length)
-            batches = preprocess.pad_and_batch(inputs, self._batch_size, self._metadata, self._is_train, expanded_embedding=self._expanded_embedding)
+            batches = preprocess.pad_and_batch(inputs, self._batch_size, self._metadata, self._is_train,
+                                               expanded_embedding=self._expanded_embedding)
 
             if self._is_train:
                 shuffle(batches)

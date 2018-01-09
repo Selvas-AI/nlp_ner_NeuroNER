@@ -44,7 +44,7 @@ class NeuroNER(object):
             log_device_placement=False
         )
 
-        # session_conf.gpu_options.per_process_gpu_memory_fraction = 0.9
+        session_conf.gpu_options.per_process_gpu_memory_fraction = 0.9
         sess = tf.Session(config=session_conf)
 
         with sess.as_default():
@@ -106,10 +106,8 @@ class NeuroNER(object):
         evaluate.evaluate_model(results, self.metadata, y_pred, y_true, stats_graph_folder, accum_step,
                                 epoch_start_time, output_filepaths, self.parameters)
 
-        end_time = time.time()
-
     def predict(self, input):
-        token_sequence, extended_sequence = preprocess.extract_feature(input)
+        token_sequence, extended_sequence = preprocess.extract_feature(input, self.parameters['tokenizer'])
         model_input = preprocess.encode(self.metadata, token_sequence, extended_sequence,
                                         expanded_embedding=self.expanded_embedding)
         batch_input = preprocess.pad_and_batch([model_input], 1, self.metadata, is_train=False,
@@ -158,11 +156,11 @@ class NeuroNER(object):
             tensorboard_token_embeddings.tensor_name = self.model.token_embedding_weights.name
             token_list_file_path = os.path.join(model_folder, 'tensorboard_metadata_tokens.tsv')
             tensorboard_token_embeddings.metadata_path = os.path.relpath(token_list_file_path, '..')
-
-            tensorboard_character_embeddings = embeddings_projector_config.embeddings.add()
-            tensorboard_character_embeddings.tensor_name = self.model.character_embedding_weights.name
-            character_list_file_path = os.path.join(model_folder, 'tensorboard_metadata_characters.tsv')
-            tensorboard_character_embeddings.metadata_path = os.path.relpath(character_list_file_path, '..')
+            if self.parameters['use_character_lstm']:
+                tensorboard_character_embeddings = embeddings_projector_config.embeddings.add()
+                tensorboard_character_embeddings.tensor_name = self.model.character_embedding_weights.name
+                character_list_file_path = os.path.join(model_folder, 'tensorboard_metadata_characters.tsv')
+                tensorboard_character_embeddings.metadata_path = os.path.relpath(character_list_file_path, '..')
 
             projector.visualize_embeddings(embedding_writer, embeddings_projector_config)
 
@@ -172,10 +170,11 @@ class NeuroNER(object):
                 token_list_file.write('{0}\n'.format(key))
             token_list_file.close()
 
-            character_list_file = open(character_list_file_path, 'w', encoding='UTF-8')
-            for key, _ in self.metadata['character_to_index'].items():
-                character_list_file.write('{0}\n'.format(key))
-            character_list_file.close()
+            if self.parameters['use_character_lstm']:
+                character_list_file = open(character_list_file_path, 'w', encoding='UTF-8')
+                for key, _ in self.metadata['character_to_index'].items():
+                    character_list_file.write('{0}\n'.format(key))
+                character_list_file.close()
 
         # Start training + evaluation loop. Each iteration corresponds to 1 epoch.
         bad_counter = 0  # number of epochs with no improvement on the validation test in terms of F1-score

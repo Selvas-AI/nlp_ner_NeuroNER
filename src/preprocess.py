@@ -128,7 +128,8 @@ def pad_and_batch(inputs, batch_size, metadata, is_train=False, expanded_embeddi
 
 def normalize_token(token):
     token = re.sub('\d+', '0', token)
-    return "".join(TwitterMorphManager().morph_analyzer.morphs(token, stem=True))
+    #return "".join(TwitterMorphManager().morph_analyzer.morphs(token, stem=True))
+    return token
 
 
 POS_TO_INDICIES = {
@@ -162,15 +163,27 @@ POS_TO_INDICIES = {
     "ProperNoun;": 28}
 
 
-def extract_feature(src):
+def extract_feature(src, tokenizer):
     token_sequence = []
     extended_sequence = []
-    pos_list = TwitterMorphManager().morph_analyzer.pos(src)
-    for idx, pos in enumerate(pos_list):
-        if pos.pos == 'Space':
-            continue
-        token_sequence.append(pos.text)
-        pos_tag = POS_TO_INDICIES[pos.pos]
-        next_is_space = 0 if idx < len(pos_list) - 1 and pos_list[idx + 1].pos != 'Space' else 1
-        extended_sequence.append([pos_tag, next_is_space])
+    if tokenizer == 'pos':
+        pos_list = TwitterMorphManager().morph_analyzer.pos(src)
+        for idx, pos in enumerate(pos_list):
+            if pos.pos == 'Space':
+                continue
+            token = normalize_token(pos.text)
+            token_sequence.append(token)
+            pos_tag = POS_TO_INDICIES[pos.pos]
+            next_is_space = 0 if idx < len(pos_list) - 1 and pos_list[idx + 1].pos != 'Space' else 1
+            extended_sequence.append([pos_tag, next_is_space])
+    elif tokenizer == 'character':
+        for idx, char in enumerate(src):
+            if char == ' ':
+                continue
+            token = normalize_token(char)
+            token_sequence.append(token)
+            next_is_space = 0 if idx < len(src) - 1 and src[idx + 1] != ' ' else 1
+            extended_sequence.append([next_is_space])
+    else:
+        raise Exception("")
     return token_sequence, extended_sequence

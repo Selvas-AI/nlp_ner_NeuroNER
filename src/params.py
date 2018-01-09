@@ -11,7 +11,8 @@ UNK_TOKEN_INDEX = PADDING_TOKEN_INDEX
 PADDING_POS_INDEX = 0
 PADDING_CHARACTER_INDEX = 0
 PADDING_LABEL_INDEX = 0
-BREAK_STEP = 30000
+LIMIT_SEQUENCE_LENGTH = 500
+BREAK_STEP = 100000
 DEFAULT_PARAMETER = {'pretrained_model_folder': '../trained_models/conll_2003_en',
                      'dataset_text_folder': '../data/conll2003/en',
                      'character_embedding_dimension': 25,
@@ -44,7 +45,8 @@ DEFAULT_PARAMETER = {'pretrained_model_folder': '../trained_models/conll_2003_en
                      'batch_size': 1,
                      'limit_word_size': 0,
                      'remap_to_unk_count_threshold': 1,
-                     'enable_tensorbord': False
+                     'enable_tensorbord': False,
+                     'tokenizer': 'pos'
                      }
 
 

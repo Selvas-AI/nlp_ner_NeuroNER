@@ -11,7 +11,7 @@ import jpype
 import tensorflow as tf
 
 import preprocess
-from src.config import CONLL_DEFAULT_LENGTH
+from params import CONLL_DEFAULT_LENGTH
 
 
 class DataQueue(object):

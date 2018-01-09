@@ -12,7 +12,7 @@ from tensorflow.contrib.tensorboard.plugins import projector
 
 import evaluate
 from data_queue import DataQueue
-from config import BREAK_STEP
+from params import BREAK_STEP
 from evaluate import remap_labels
 
 matplotlib.use('Agg')
@@ -115,7 +115,7 @@ class NeuroNER(object):
         batch_input = preprocess.pad_and_batch([model_input], 1, self.metadata, is_train=False,
                                                expanded_embedding=self.expanded_embedding)
         _, prediction_labels_list = self._predict_core(batch_input[0])
-        return token_sequence, extended_sequence, prediction_labels_list
+        return token_sequence, extended_sequence, prediction_labels_list[0]
 
     def fit(self, dataset_filepaths):
         stats_graph_folder, experiment_timestamp = self._create_stats_graph_folder(self.parameters)

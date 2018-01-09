@@ -6,10 +6,9 @@ import time
 import warnings
 
 import utils
-from config import Configuration
+from params import Configuration
 from neuroner import NeuroNER
 from src.metadata import Metadata
-from twitter.pyokt.twitter import TwitterMorphManager
 
 warnings.filterwarnings('ignore')
 
@@ -19,9 +18,6 @@ def main():
     parser.add_argument('--parameter', type=str, default='./parameters.ini')
     parser.add_argument('--mode', type=str, default='')
     cmd_arg = parser.parse_args()
-
-    # multithread시 오류로 인해 임시코드 삽입
-    TwitterMorphManager().morph_analyzer.morphs("korean ner tagger")
 
     start_time = time.time()
     print('Init... ', end='', flush=True)

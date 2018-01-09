@@ -5,8 +5,8 @@ from collections import namedtuple
 import numpy as np
 
 import utils
-from src.config import PADDING_LABEL_INDEX, PADDING_CHARACTER_INDEX, PADDING_TOKEN_INDEX
-from twitter.pyokt.twitter import TwitterMorphManager
+from params import PADDING_LABEL_INDEX, PADDING_CHARACTER_INDEX, PADDING_TOKEN_INDEX
+from oktpy.twitter import TwitterMorphManager
 
 ModelInput = namedtuple('ModelInput',
                         'token_indices character_indices label_indices extended_sequence conll token_lengths sequence_length')

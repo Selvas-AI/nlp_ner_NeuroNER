@@ -2,7 +2,7 @@
 import configparser
 import os
 
-from src import utils
+import utils
 
 CONLL_DEFAULT_LENGTH = 5
 UNK = 'UNK'

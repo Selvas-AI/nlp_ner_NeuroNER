@@ -1,16 +1,12 @@
 # -*- coding: utf-8-*-
 import collections
 import glob
-
 import os
-
 import pickle
-
-from struct import pack
 
 import preprocess
 import utils
-from config import CONLL_DEFAULT_LENGTH, UNK_TOKEN_INDEX, PADDING_LABEL_INDEX, PADDING_CHARACTER_INDEX
+from params import CONLL_DEFAULT_LENGTH, UNK_TOKEN_INDEX, PADDING_LABEL_INDEX, PADDING_CHARACTER_INDEX
 
 
 class Metadata(dict):

@@ -206,3 +206,43 @@ def convert_conll_from_bio_to_bioes(input_conll_filepath, output_conll_filepath)
     output_conll_file.close()
     print("Done.")
     
+def make_dt_ti_ptn(text):
+    ptn = re.sub(r'\s+', '', text)  # remove spaces
+    return re.sub(r'\d', '0', ptn)  # replace all numbers with zero
+
+
+def make_text(morps, begin, end):
+    # 공백정보 살려서 넣는게 좋을듯
+    return ''.join(morps[begin:end])
+
+
+def _find_right_bound(morps, begin, max_key_len):
+    len_sum = len(morps[begin])
+    for idx in range(begin + 1, len(morps)):
+        len_sum += len(morps[idx])
+        if len_sum > max_key_len:
+            return idx
+    return len(morps)
+
+def tag_nes(dic, max_key_len, morps):
+    nes = []
+    for _ in range(len(morps)):
+        nes.append(set())
+    for begin in range(len(morps)):
+        right_bound = _find_right_bound(morps, begin, max_key_len)
+        # find pattern and key, longest first
+        for end in range(right_bound, begin, -1):  # end is exclusive
+            text = make_text(morps, begin, end)
+            categories = []
+            ptn = make_dt_ti_ptn(text)
+            if ptn in dic:
+                categories = dic[ptn]
+            else:
+                key = re.sub(r'\s+', '', text).lower()
+                if key in dic:
+                    categories = dic[key]
+            if categories:
+                for idx in range(begin, end):
+                    nes[idx].update(categories)
+    return nes
+

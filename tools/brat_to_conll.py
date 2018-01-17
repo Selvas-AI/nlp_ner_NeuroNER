@@ -10,11 +10,15 @@ from multiprocessing.pool import ThreadPool
 
 import re
 #import spacy
+import pickle
+
 import utils_nlp
 from pycorenlp import StanfordCoreNLP
 
-from korean_nlp import pos_analyze
+from oktpy.twitter import Twitter
 from colorama import init
+
+twitter = Twitter()
 
 
 MAX_SENTNECE_LEN = 500
@@ -169,6 +173,18 @@ POS_TO_INDICIES = {
 
 hangul = re.compile('[^ㄱ-ㅎ가-힣a-zA-Z\d\s' + string.punctuation + ']')
 
+def pos_analyze(sentence):
+    output = []
+    eoj = []
+    pos_list = twitter.pos(sentence)
+    for pos in pos_list:
+        if pos.pos == 'Space':
+            output.append(eoj)
+            eoj = []
+        else:
+            eoj.append([pos.text, pos.pos])
+    output.append(eoj)
+    return output
 
 def get_sentences_and_tokens_from_korean(text):
     sentences = []
@@ -182,9 +198,13 @@ def get_sentences_and_tokens_from_korean(text):
             break_for_loop = True
         pos_info = pos_analyze(line)
         sentence_tokens = []
+        morphs = [e[0] for m in pos_info for e in m]
+        gazetteer_info = utils_nlp.tag_nes(gazetteer, max_key_len, morphs)
 
+        elem_idx = -1
         for pos in pos_info:
             for token_index, token in enumerate(pos):
+                elem_idx += 1
                 token_dict = {}
                 token_dict['start'] = last_index
                 token_dict['end'] = last_index + len(token[0])
@@ -192,6 +212,7 @@ def get_sentences_and_tokens_from_korean(text):
                 if len(token[0]) > MAX_WORD_LEN:
                     break_for_loop = True
                 token_dict['pos'] = POS_TO_INDICIES[token[1]]
+                token_dict['gazetteer'] = 1 if len(gazetteer_info[elem_idx]) > 0 else 0
 
                 token_dict['space'] = 1 if token_index == len(pos) - 1 else 0
                 if text[token_dict['start']:token_dict['end']] != token_dict['text']:
@@ -222,7 +243,7 @@ def get_sentences_and_tokens_from_korean(text):
             sentences.append(sentence_tokens)
     return sentences
 
-def brat_to_conll(input_folder, output_filepath, tokenizer, language):
+def brat_to_conll(input_folder, output_filepath, tokenizer):
     '''
     Assumes '.txt' and '.ann' files are in the input_folder.
     Checks for the compatibility between .txt and .ann at the same time.
@@ -318,8 +339,18 @@ def parse_token(sentence, base_filename, entities, hit_map, verbose):
             inside = False
         previous_token_label = token['label']
         if verbose: print(
-            '{0} {1} {2} {3} {4} {5} {6}\n'.format(token['text'], base_filename, token['start'], token['end'], token['pos'], token['space'],
+            '{0} {1} {2} {3} {4} {5} {6} {7}\n'.format(token['text'], base_filename, token['start'], token['end'], token['pos'], token['space'], token['gazetteer'],
                                            gold_label))
-        output_text += '{0} {1} {2} {3} {4} {5} {6}\n'.format(token['text'], base_filename, token['start'], token['end'], token['pos'], token['space'],
+        output_text += '{0} {1} {2} {3} {4} {5} {6} {7}\n'.format(token['text'], base_filename, token['start'], token['end'], token['pos'], token['space'], token['gazetteer'],
                                                       gold_label)
     return output_text
+
+
+
+if __name__ == "__main__":
+    pk = pickle.load(open(r"D:\tech\entity\NeuroNER\data\weather\gazetteer", "rb"))
+    gazetteer = pk['dic']
+    max_key_len = pk['max_key_len']
+    #brat_to_conll('D:\\tech\\data\\valid\\', r'D:\tech\entity\NeuroNER\data\weather\data.txt', 'korean')
+    brat_to_conll('D:\\tech\\data\\valid\\', r'D:\tech\entity\NeuroNER\data\exobrain4\valid\valid.txt', 'korean')
+

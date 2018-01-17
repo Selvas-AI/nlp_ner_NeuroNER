@@ -31,10 +31,20 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 
 class NeuroNER(object):
-    def __init__(self, parameters, metadata, expanded_embedding=None):
+    def __init__(self, parameters, metadata):
         mode = parameters['mode']
         if mode == "predict" or mode == "vocab_expansion":
             parameters['batch_size'] = 1
+
+        if mode == 'predict' and parameters['use_gazetteer']:
+            gazetteer_path = parameters['pretrained_model_folder'] + '/gazetteer'
+            pk = pickle.load(open(gazetteer_path, "rb"))
+            self.gazetteer = pk['dic']
+            self.max_key_len = pk['max_key_len']
+            del pk
+        else:
+            self.gazetteer = None
+            self.max_key_len = None
 
         session_conf = tf.ConfigProto(
             intra_op_parallelism_threads=parameters['number_of_cpu_threads'],
@@ -61,6 +71,14 @@ class NeuroNER(object):
                                                                 metadata['num_of_label'] + 2)
             else:
                 self.transition_params_trained = model.load_model(parameters['pretrained_model_folder'], sess)
+
+        expanded_embedding = None
+        if parameters['use_vocab_expansion'] and (parameters['mode'] == 'predict' or parameters['mode'] == 'test'):
+            expanded_embedding_filepath = parameters['pretrained_model_folder'] + "/expanded_embedding.pickles"
+            if not os.path.exists(expanded_embedding_filepath):
+                raise Exception("expand embedding file not exist")
+            with open(expanded_embedding_filepath, "rb") as f:
+                expanded_embedding = pickle.load(f)
 
         self.expanded_embedding = expanded_embedding
         self.model = model
@@ -107,7 +125,7 @@ class NeuroNER(object):
                                 epoch_start_time, output_filepaths, self.parameters)
 
     def predict(self, input):
-        token_sequence, extended_sequence = preprocess.extract_feature(input, self.parameters['tokenizer'])
+        token_sequence, extended_sequence = preprocess.extract_feature(input, self.parameters['tokenizer'], self.gazetteer, self.max_key_len)
         model_input = preprocess.encode(self.metadata, token_sequence, extended_sequence,
                                         expanded_embedding=self.expanded_embedding)
         batch_input = preprocess.pad_and_batch([model_input], 1, self.metadata, is_train=False,

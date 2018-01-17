@@ -39,6 +39,7 @@ DEFAULT_PARAMETER = {'pretrained_model_folder': '../trained_models/conll_2003_en
                      'token_pretrained_embedding_filepath': '../data/word_vectors/glove.6B.100d.txt',
                      'mode': 'train',
                      'use_vocab_expansion': False,
+                     'use_gazetteer': False,
                      'use_character_lstm': True,
                      'use_crf': True,
                      'lstm_cell_type': 'lstm',
@@ -79,7 +80,7 @@ class Configuration(dict):
                     parameters[k] = int(v)
             elif k in ['dropout_rate', 'learning_rate', 'gradient_clipping_value']:
                 parameters[k] = float(v)
-            elif k in ['remap_unknown_tokens_to_unk', 'use_character_lstm', 'use_crf',
+            elif k in ['remap_unknown_tokens_to_unk', 'use_character_lstm', 'use_crf', 'use_gazetteer',
                        'check_for_lowercase', 'check_for_digits_replaced_with_zeros', 'use_vocab_expansion',
                        'freeze_token_embeddings', 'load_only_pretrained_token_embeddings',
                        'load_all_pretrained_token_embeddings', 'enable_tensorbord']:

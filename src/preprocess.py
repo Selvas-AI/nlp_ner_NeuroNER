@@ -5,6 +5,7 @@ from collections import namedtuple
 import numpy as np
 
 import utils
+import utils_nlp
 from params import PADDING_LABEL_INDEX, PADDING_CHARACTER_INDEX, PADDING_TOKEN_INDEX
 from oktpy.twitter import TwitterMorphManager
 
@@ -163,11 +164,20 @@ POS_TO_INDICIES = {
     "ProperNoun;": 28}
 
 
-def extract_feature(src, tokenizer):
+def extract_feature(src, tokenizer, gazetteer, max_key_len):
     token_sequence = []
     extended_sequence = []
     if tokenizer == 'pos':
         pos_list = TwitterMorphManager().morph_analyzer.pos(src)
+        if gazetteer is not None:
+            morphs = []
+            for pos in pos_list:
+                if pos.pos == 'Space':
+                    continue
+                morphs.append(pos.text)
+            gazetteer_info = utils_nlp.tag_nes(gazetteer, max_key_len, morphs)
+
+        elem_idx = 0
         for idx, pos in enumerate(pos_list):
             if pos.pos == 'Space':
                 continue
@@ -175,7 +185,13 @@ def extract_feature(src, tokenizer):
             token_sequence.append(token)
             pos_tag = POS_TO_INDICIES[pos.pos]
             next_is_space = 0 if idx < len(pos_list) - 1 and pos_list[idx + 1].pos != 'Space' else 1
-            extended_sequence.append([pos_tag, next_is_space])
+            if gazetteer is None:
+                extended_sequence.append([pos_tag, next_is_space])
+            else:
+                gz = 1 if len(gazetteer_info[elem_idx]) > 0 else 0
+                extended_sequence.append([pos_tag, next_is_space, gz])
+            elem_idx += 1
+
     elif tokenizer == 'character':
         for idx, char in enumerate(src):
             if char == ' ':

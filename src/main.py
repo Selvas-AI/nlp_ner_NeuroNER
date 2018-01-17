@@ -43,15 +43,7 @@ def main():
     else:
         metadata = Metadata(parameters['pretrained_model_folder'], None, None, None)
 
-    expanded_embedding = None
-    if parameters['use_vocab_expansion'] and (parameters['mode'] == 'predict' or parameters['mode'] == 'test'):
-        expanded_embedding_filepath = parameters['pretrained_model_folder'] + "/expanded_embedding.pickles"
-        if not os.path.exists(expanded_embedding_filepath):
-            raise Exception("expand embedding file not exist")
-        with open(expanded_embedding_filepath, "rb") as f:
-            expanded_embedding = pickle.load(f)
-
-    neuroner = NeuroNER(parameters, metadata, expanded_embedding=expanded_embedding)
+    neuroner = NeuroNER(parameters, metadata)
     print('done ({0:.2f} seconds)'.format(time.time() - start_time))
 
     if parameters['mode'] == 'train':

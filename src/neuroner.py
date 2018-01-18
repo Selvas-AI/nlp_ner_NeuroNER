@@ -104,7 +104,8 @@ class NeuroNER(object):
             data_queue[dataset_type] = DataQueue(self.metadata, dataset_path, self.parameters['batch_size'],
                                                  is_train=True if dataset_type == 'train' else False,
                                                  use_process=True if dataset_type == 'train' else False,
-                                                 expanded_embedding=self.expanded_embedding)
+                                                 expanded_embedding=self.expanded_embedding,
+                                                 pad_constant_size=self.parameters['use_attention'])
         epoch_start_time = time.time()
         accum_step = 0
 
@@ -202,7 +203,8 @@ class NeuroNER(object):
         for dataset_type, dataset_path in dataset_filepaths.items():
             data_queue[dataset_type] = DataQueue(self.metadata, dataset_path, self.parameters['batch_size'],
                                                  is_train=True if dataset_type == 'train' else False,
-                                                 use_process=True if dataset_type == 'train' else False)
+                                                 use_process=True if dataset_type == 'train' else False,
+                                                 pad_constant_size=self.parameters['use_attention'])
 
         first_step = True
         try:
@@ -359,8 +361,8 @@ class NeuroNER(object):
             self.model.training: False,
             self.model.dropout_keep_prob: 1.
         }
-        batch_unary_scores, batch_predictions = self.sess.run([self.model.unary_scores, self.model.predictions],
-                                                              feed_dict)
+        batch_unary_scores, batch_predictions = self.sess.run([self.model.unary_scores, self.model.predictions], feed_dict)
+
         predictions_list = []
         prediction_labels_list = []
         for idx in range(batch_input['batch_size']):

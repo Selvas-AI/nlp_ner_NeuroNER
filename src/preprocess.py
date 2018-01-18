@@ -6,7 +6,7 @@ import numpy as np
 
 import utils
 import utils_nlp
-from params import PADDING_LABEL_INDEX, PADDING_CHARACTER_INDEX, PADDING_TOKEN_INDEX
+from params import PADDING_LABEL_INDEX, PADDING_CHARACTER_INDEX, PADDING_TOKEN_INDEX, LIMIT_SEQUENCE_LENGTH
 from oktpy.twitter import TwitterMorphManager
 
 ModelInput = namedtuple('ModelInput',
@@ -55,7 +55,7 @@ def encode(metadata, token_sequence, extended_sequence, label_sequence=None, con
                       token_lengths, sequence_length)
 
 
-def pad_and_batch(inputs, batch_size, metadata, is_train=False, expanded_embedding=None):
+def pad_and_batch(inputs, batch_size, metadata, is_train=False, expanded_embedding=None, pad_constant_size=False):
     batches = []
     for i in range(0, len(inputs), batch_size):
         batch_data = {}
@@ -63,7 +63,11 @@ def pad_and_batch(inputs, batch_size, metadata, is_train=False, expanded_embeddi
         end = min(i + batch_size, len(inputs))
 
         current = inputs[begin:end]
-        max_token_size = max([len(element.token_indices) for element in current])
+
+        if pad_constant_size:
+            max_token_size = LIMIT_SEQUENCE_LENGTH
+        else:
+            max_token_size = max([len(element.token_indices) for element in current])
 
         batch_data['token_indices'] = []
         if expanded_embedding is not None:

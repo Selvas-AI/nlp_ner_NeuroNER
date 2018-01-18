@@ -11,8 +11,8 @@ UNK_TOKEN_INDEX = PADDING_TOKEN_INDEX
 PADDING_POS_INDEX = 0
 PADDING_CHARACTER_INDEX = 0
 PADDING_LABEL_INDEX = 0
-LIMIT_SEQUENCE_LENGTH = 500
-BREAK_STEP = 100000
+LIMIT_SEQUENCE_LENGTH = 50
+BREAK_STEP = 30000
 DEFAULT_PARAMETER = {'pretrained_model_folder': '../trained_models/conll_2003_en',
                      'dataset_text_folder': '../data/conll2003/en',
                      'character_embedding_dimension': 25,
@@ -42,6 +42,8 @@ DEFAULT_PARAMETER = {'pretrained_model_folder': '../trained_models/conll_2003_en
                      'use_gazetteer': False,
                      'use_character_lstm': True,
                      'use_crf': True,
+                     'use_attention': False,
+                     'attention_size': 100,
                      'lstm_cell_type': 'lstm',
                      'batch_size': 1,
                      'limit_word_size': 0,
@@ -72,7 +74,7 @@ class Configuration(dict):
                      'token_embedding_dimension',
                      'token_lstm_hidden_state_dimension', 'patience', 'maximum_number_of_steps',
                      'maximum_training_time', 'number_of_cpu_threads', 'number_of_gpus', 'batch_size',
-                     'limit_word_size',
+                     'limit_word_size', 'attention_size',
                      'remap_to_unk_count_threshold']:
                 if type(v) is list:
                     parameters[k] = [int(e) for e in v]
@@ -82,7 +84,7 @@ class Configuration(dict):
                 parameters[k] = float(v)
             elif k in ['remap_unknown_tokens_to_unk', 'use_character_lstm', 'use_crf', 'use_gazetteer',
                        'check_for_lowercase', 'check_for_digits_replaced_with_zeros', 'use_vocab_expansion',
-                       'freeze_token_embeddings', 'load_only_pretrained_token_embeddings',
+                       'freeze_token_embeddings', 'load_only_pretrained_token_embeddings', 'use_attention',
                        'load_all_pretrained_token_embeddings', 'enable_tensorbord']:
                 parameters[k] = utils.str2bool(v)
         parameters['ini_path'] = parameters_filepath

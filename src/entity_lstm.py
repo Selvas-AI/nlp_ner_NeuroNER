@@ -7,6 +7,8 @@ import tensorflow as tf
 
 import bnlstm
 import utils
+from attention import attention_decoder
+from params import LIMIT_SEQUENCE_LENGTH
 
 
 def bidirectional_LSTM(input, training, hidden_state_dimension, initializer, sequence_length=None,
@@ -68,7 +70,7 @@ def bidirectional_LSTM(input, training, hidden_state_dimension, initializer, seq
             final_states_forward, final_states_backward = final_states
             output = tf.concat([final_states_forward[1], final_states_backward[1]], axis=1, name='output')
 
-    return output
+    return output, final_states
 
 
 def MultiBlstm(input, input_seq_lengths, dropout_keep_prob, training, initializer, parameters):
@@ -94,17 +96,18 @@ def MultiBlstm(input, input_seq_lengths, dropout_keep_prob, training, initialize
 
             # Token LSTM layer
             with tf.variable_scope('token_lstm') as vs:
-                token_lstm_output = bidirectional_LSTM(token_lstm_input_drop,
-                                                       training,
-                                                       hd, initializer,
-                                                       sequence_length=input_seq_lengths,
-                                                       output_sequence=True,
-                                                       lstm_cell_type=parameters['lstm_cell_type'])
+                token_lstm_output, final_states = bidirectional_LSTM(token_lstm_input_drop,
+                                                                     training,
+                                                                     hd, initializer,
+                                                                     sequence_length=input_seq_lengths,
+                                                                     output_sequence=True,
+                                                                     lstm_cell_type=parameters[
+                                                                         'lstm_cell_type'])
                 if 'token_lstm_variables' in locals():
                     token_lstm_variables += tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=vs.name)
                 else:
                     token_lstm_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=vs.name)
-    return token_lstm_output, hd, token_lstm_variables
+    return token_lstm_output, hd, token_lstm_variables, final_states
 
 
 def variable_summaries(var):
@@ -144,8 +147,9 @@ class EntityLSTM(object):
         self.batch_size = parameters['batch_size']
         # Placeholders for input, output and dropout
         if use_external_embedding:
-            self.input_token_indices = tf.placeholder(tf.float32, (self.batch_size, None, parameters['token_embedding_dimension']),
-                                         "input_token_indices")
+            self.input_token_indices = tf.placeholder(tf.float32,
+                                                      (self.batch_size, None, parameters['token_embedding_dimension']),
+                                                      "input_token_indices")
         else:
             self.input_token_indices = tf.placeholder(tf.int32, [self.batch_size, None], name="input_token_indices")
         self.input_extended_sequence = tf.placeholder(tf.int32, [self.batch_size, None, None],
@@ -186,12 +190,12 @@ class EntityLSTM(object):
             with tf.variable_scope('character_lstm') as vs:
                 reshaped_itl = tf.reshape(self.input_token_lengths,
                                           [itl_shape[0] * itl_shape[1]])
-                character_lstm_output = bidirectional_LSTM(embedded_characters,
-                                                           self.training,
-                                                           parameters['character_lstm_hidden_state_dimension'],
-                                                           initializer,
-                                                           sequence_length=reshaped_itl,
-                                                           output_sequence=False)
+                character_lstm_output, _ = bidirectional_LSTM(embedded_characters,
+                                                              self.training,
+                                                              parameters['character_lstm_hidden_state_dimension'],
+                                                              initializer,
+                                                              sequence_length=reshaped_itl,
+                                                              output_sequence=False)
                 reshaped_character_lstm_output = tf.reshape(character_lstm_output,
                                                             [itl_shape[0], itl_shape[1], parameters[
                                                                 'character_lstm_hidden_state_dimension'] * 2])
@@ -217,7 +221,8 @@ class EntityLSTM(object):
                 variable_summaries(self.token_embedding_weights)
 
         ext_shape = tf.shape(self.input_extended_sequence)
-        splitted_extended_value = tf.split(self.input_extended_sequence, num_or_size_splits=len(num_of_extendeds), axis=2)
+        splitted_extended_value = tf.split(self.input_extended_sequence, num_or_size_splits=len(num_of_extendeds),
+                                           axis=2)
         for ex_idx, extended in enumerate(splitted_extended_value):
             with tf.variable_scope("extended_%d" % ex_idx):
                 reshaped_extended = tf.reshape(extended, [ext_shape[0], ext_shape[1]])
@@ -235,19 +240,40 @@ class EntityLSTM(object):
         else:
             token_lstm_input = stacked_embedded_tokens
 
-        token_lstm_output, hidden_dim, self.token_lstm_variables = MultiBlstm(token_lstm_input, self.input_seq_lengths,
-                                                                              self.dropout_keep_prob,
-                                                                              self.training, initializer, parameters)
+        token_lstm_output, hidden_dim, self.token_lstm_variables, final_states = MultiBlstm(token_lstm_input,
+                                                                                            self.input_seq_lengths,
+                                                                                            self.dropout_keep_prob,
+                                                                                            self.training, initializer,
+                                                                                            parameters)
+        if parameters['use_attention']:
+            #state = final_states[-1]
+            #encoder_state = tf.concat(state, 1)
+            encoder_state_fw, encoder_state_bw = final_states
+            state_fw = encoder_state_fw[-1]
+            state_bw = encoder_state_bw[-1]
+            encoder_state = tf.concat([tf.concat(state_fw, 1),
+                                       tf.concat(state_bw, 1)], 1)
+            encoder_out, attention_weight = attention_decoder(token_lstm_output,
+                                                              encoder_state,
+                                                              parameters['attention_size'],
+                                                              LIMIT_SEQUENCE_LENGTH)
+        else:
+            encoder_out = token_lstm_output
 
         # Needed only if Bidirectional LSTM is used for token level
         with tf.variable_scope("feedforward_after_lstm") as vs:
+            shape_tlo = tf.shape(encoder_out)
+            if parameters['use_attention']:
+                prev_node_size = parameters['attention_size']
+            else:
+                prev_node_size = hidden_dim * 2
+
             W = tf.get_variable(
                 "W",
-                shape=[2 * hidden_dim, hidden_dim],
+                shape=[prev_node_size, hidden_dim],
                 initializer=initializer)
             b = tf.Variable(tf.constant(0.0, shape=[hidden_dim]), name="bias")
-            shape_tlo = tf.shape(token_lstm_output)
-            reshaped_tlo = tf.reshape(token_lstm_output, [shape_tlo[0] * shape_tlo[1], shape_tlo[2]])
+            reshaped_tlo = tf.reshape(encoder_out, [shape_tlo[0] * shape_tlo[1], shape_tlo[2]])
             outputs = tf.nn.xw_plus_b(reshaped_tlo, W, b, name="output_before_tanh")
             outputs = tf.nn.tanh(outputs, name="output_after_tanh")
             variable_summaries(W)

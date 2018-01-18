@@ -19,7 +19,7 @@ class DataQueue(object):
 
     def __init__(self, metadata, data_path, batch_size, is_train,
                  bucketing=False, truncate_input=False, use_process=False,
-                 expanded_embedding=None):
+                 expanded_embedding=None, pad_constant_size=False):
         """Batcher constructor.
         Args:
           data_path: tf.Example filepattern.
@@ -34,6 +34,7 @@ class DataQueue(object):
             to discard such examples.
         """
         self._use_process = use_process
+        self._pad_constant_size = pad_constant_size
         if self._use_process:
             Worker = Process
             Queue = ProcessQueue
@@ -120,7 +121,7 @@ class DataQueue(object):
                                 extended = [0]
                             extended_sequence.append(extended)
 
-                        if 0 < len(token_sequence) and len(token_sequence) < LIMIT_SEQUENCE_LENGTH:
+                        if 0 < len(token_sequence) and len(token_sequence) <= LIMIT_SEQUENCE_LENGTH:
                             element = preprocess.encode(self._metadata, token_sequence, extended_sequence,
                                                         label_sequence, conll_txt,
                                                         expanded_embedding=self._expanded_embedding)
@@ -142,7 +143,7 @@ class DataQueue(object):
             if self._is_train:
                 inputs = sorted(inputs, key=lambda inp: inp.sequence_length)
             batches = preprocess.pad_and_batch(inputs, self._batch_size, self._metadata, self._is_train,
-                                               expanded_embedding=self._expanded_embedding)
+                                               expanded_embedding=self._expanded_embedding, pad_constant_size=self._pad_constant_size)
 
             if self._is_train:
                 shuffle(batches)

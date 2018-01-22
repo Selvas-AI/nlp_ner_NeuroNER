@@ -1,9 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Sun Feb  28 11:32:21 2016
-
-@author: Bing Liu (liubing@cmu.edu)
-"""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -91,7 +86,7 @@ def attention_decoder(encoder_outputs_raw,
                     initial_state = linear(encoder_state, output_size, True)
                 attn_weights, ds = attention(initial_state)
             else:
-                attn_weights, ds = attention(encoder_outputs[i])
+                attn_weights, ds = attention(logit)
             output = tf.concat([ds[0], encoder_outputs[i]], 1)
             # NOTE: here we temporarily assume num_head = 1
             with tf.variable_scope("AttnRnnOutputProjection"):

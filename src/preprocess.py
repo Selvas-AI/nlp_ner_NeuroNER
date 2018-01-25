@@ -170,6 +170,7 @@ POS_TO_INDICIES = {
 
 def extract_feature(src, tokenizer, gazetteer, max_key_len):
     token_sequence = []
+    raw_token_sequence = []
     extended_sequence = []
     if tokenizer == 'pos':
         pos_list = TwitterMorphManager().morph_analyzer.pos(src)
@@ -186,6 +187,7 @@ def extract_feature(src, tokenizer, gazetteer, max_key_len):
             if pos.pos == 'Space':
                 continue
             token = normalize_token(pos.text)
+            raw_token_sequence.append(pos.text)
             token_sequence.append(token)
             pos_tag = POS_TO_INDICIES[pos.pos]
             next_is_space = 0 if idx < len(pos_list) - 1 and pos_list[idx + 1].pos != 'Space' else 1
@@ -201,9 +203,10 @@ def extract_feature(src, tokenizer, gazetteer, max_key_len):
             if char == ' ':
                 continue
             token = normalize_token(char)
+            raw_token_sequence.append(char)
             token_sequence.append(token)
             next_is_space = 0 if idx < len(src) - 1 and src[idx + 1] != ' ' else 1
             extended_sequence.append([next_is_space])
     else:
         raise Exception("")
-    return token_sequence, extended_sequence
+    return token_sequence, raw_token_sequence, extended_sequence

@@ -126,13 +126,14 @@ class NeuroNER(object):
                                 epoch_start_time, output_filepaths, self.parameters)
 
     def predict(self, input):
-        token_sequence, extended_sequence = preprocess.extract_feature(input, self.parameters['tokenizer'], self.gazetteer, self.max_key_len)
+        token_sequence, raw_token_sequence, extended_sequence = preprocess.extract_feature(input, self.parameters['tokenizer'], self.gazetteer, self.max_key_len)
         model_input = preprocess.encode(self.metadata, token_sequence, extended_sequence,
                                         expanded_embedding=self.expanded_embedding)
         batch_input = preprocess.pad_and_batch([model_input], 1, self.metadata, is_train=False,
-                                               expanded_embedding=self.expanded_embedding)
+                                               expanded_embedding=self.expanded_embedding,
+                                               pad_constant_size=self.parameters['use_attention'])
         _, prediction_labels_list = self._predict_core(batch_input[0])
-        return token_sequence, extended_sequence, prediction_labels_list[0]
+        return raw_token_sequence, extended_sequence, prediction_labels_list[0]
 
     def fit(self, dataset_filepaths):
         stats_graph_folder, experiment_timestamp = self._create_stats_graph_folder(self.parameters)

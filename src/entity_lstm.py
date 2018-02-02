@@ -253,7 +253,7 @@ class EntityLSTM(object):
             state_bw = encoder_state_bw[-1]
             encoder_state = tf.concat([tf.concat(state_fw, 1),
                                        tf.concat(state_bw, 1)], 1)
-            encoder_out, attention_weight = attention_decoder(token_lstm_output,
+            encoder_out, self.attention_weight = attention_decoder(token_lstm_output,
                                                               encoder_state,
                                                               parameters['attention_size'],
                                                               LIMIT_SEQUENCE_LENGTH)

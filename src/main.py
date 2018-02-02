@@ -33,8 +33,8 @@ def main():
             raise Exception('train data path empty')
     elif parameters['mode'] == 'test':
         dataset_filepaths.pop('train', None)
-        dataset_filepaths.pop('valid', None)
-        if 'test' not in dataset_filepaths:
+        #dataset_filepaths.pop('valid', None)
+        if len(dataset_filepaths) == 0:
             raise Exception('test data path empty')
 
     if parameters['mode'] == 'train':

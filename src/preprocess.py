@@ -27,14 +27,12 @@ def encode(metadata, token_sequence, extended_sequence, label_sequence=None, con
     token_indices = []
     if expanded_embedding is not None:
         for token in token_sequence:
-            token = normalize_token(token)
             if token in expanded_embedding:
                 token_indices.append(expanded_embedding[token])
             else:
                 token_indices.append(expanded_embedding["UNK"])
     else:
         for token in token_sequence:
-            token = normalize_token(token)
             if token in metadata['token_to_index']:
                 token_indices.append(metadata['token_to_index'][token])
             else:

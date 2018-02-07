@@ -49,6 +49,7 @@ DEFAULT_PARAMETER = {'pretrained_model_folder': '../trained_models/conll_2003_en
                      'limit_word_size': 0,
                      'remap_to_unk_count_threshold': 1,
                      'enable_tensorbord': False,
+                     'load_pretrained_model': False,
                      'tokenizer': 'pos'
                      }
 
@@ -85,7 +86,7 @@ class Configuration(dict):
             elif k in ['remap_unknown_tokens_to_unk', 'use_character_lstm', 'use_crf', 'use_gazetteer',
                        'check_for_lowercase', 'check_for_digits_replaced_with_zeros', 'use_vocab_expansion',
                        'freeze_token_embeddings', 'load_only_pretrained_token_embeddings', 'use_attention',
-                       'load_all_pretrained_token_embeddings', 'enable_tensorbord']:
+                       'load_all_pretrained_token_embeddings', 'enable_tensorbord', 'load_pretrained_model']:
                 parameters[k] = utils.str2bool(v)
         parameters['ini_path'] = parameters_filepath
         return parameters

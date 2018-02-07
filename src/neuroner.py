@@ -65,12 +65,14 @@ class NeuroNER(object):
             model = EntityLSTM(parameters, metadata, use_external_embedding=use_vocab_expansion)
             sess.run(tf.global_variables_initializer())
 
-            if mode == "train":
-                model.load_pretrained_token_embeddings(sess, parameters, metadata)
-                self.transition_params_trained = np.random.rand(metadata['num_of_label'] + 2,
-                                                                metadata['num_of_label'] + 2)
+        if mode == "train":
+            if parameters['load_pretrained_model']:
+                self.transition_params_trained = model.load_model(parameters['pretrained_model_folder'], sess,  metadata, parameters)
             else:
-                self.transition_params_trained = model.load_model(parameters['pretrained_model_folder'], sess)
+                model.load_pretrained_token_embeddings(sess, parameters, metadata)
+                self.transition_params_trained = np.random.rand(metadata['num_of_label'] + 2, metadata['num_of_label'] + 2)
+        else:
+            self.transition_params_trained = model.load_model(parameters['pretrained_model_folder'], sess, metadata, parameters)
 
         expanded_embedding = None
         if parameters['use_vocab_expansion'] and (parameters['mode'] == 'predict' or parameters['mode'] == 'test'):
@@ -126,7 +128,10 @@ class NeuroNER(object):
                                 epoch_start_time, output_filepaths, self.parameters)
 
     def predict(self, input):
-        token_sequence, raw_token_sequence, extended_sequence = preprocess.extract_feature(input, self.parameters['tokenizer'], self.gazetteer, self.max_key_len)
+        token_sequence, raw_token_sequence, extended_sequence = preprocess.extract_feature(input,
+                                                                                           self.parameters['tokenizer'],
+                                                                                           self.gazetteer,
+                                                                                           self.max_key_len)
         model_input = preprocess.encode(self.metadata, token_sequence, extended_sequence,
                                         expanded_embedding=self.expanded_embedding)
         batch_input = preprocess.pad_and_batch([model_input], 1, self.metadata, is_train=False,
@@ -151,6 +156,9 @@ class NeuroNER(object):
 
         model_folder = os.path.join(stats_graph_folder, 'model')
         utils.create_folder_if_not_exists(model_folder)
+        del self.metadata['prev_num_of_token']
+        del self.metadata['prev_num_of_char']
+        self.metadata.write(model_folder)
 
         copyfile(self.parameters['ini_path'], os.path.join(model_folder, 'parameters.ini'))
 
@@ -362,7 +370,8 @@ class NeuroNER(object):
             self.model.training: False,
             self.model.dropout_keep_prob: 1.
         }
-        batch_unary_scores, batch_predictions = self.sess.run([self.model.unary_scores, self.model.predictions], feed_dict)
+        batch_unary_scores, batch_predictions = self.sess.run([self.model.unary_scores, self.model.predictions],
+                                                              feed_dict)
 
         predictions_list = []
         prediction_labels_list = []

@@ -38,8 +38,13 @@ def main():
             raise Exception('test data path empty')
 
     if parameters['mode'] == 'train':
-        metadata = Metadata(parameters['dataset_text_folder'], dataset_filepaths, parameters['limit_word_size'],
-                            parameters['remap_to_unk_count_threshold'])
+        if parameters['load_pretrained_model']:
+            metadata = Metadata(parameters['pretrained_model_folder'], None, None, None)
+            metadata.patch(dataset_filepaths, parameters['limit_word_size'], parameters['remap_to_unk_count_threshold'])
+        else:
+            metadata = Metadata(parameters['dataset_text_folder'], dataset_filepaths, parameters['limit_word_size'],
+                                parameters['remap_to_unk_count_threshold'])
+            metadata.write(parameters['dataset_text_folder'])
     else:
         metadata = Metadata(parameters['pretrained_model_folder'], None, None, None)
 

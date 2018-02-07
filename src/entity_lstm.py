@@ -177,6 +177,7 @@ class EntityLSTM(object):
                     "character_embedding_weights",
                     shape=[num_of_char, parameters['character_embedding_dimension']],
                     initializer=initializer)
+
                 itci_shape = tf.shape(self.input_token_character_indices)
                 reshaped_itci = tf.reshape(self.input_token_character_indices,
                                            [itci_shape[0] * itci_shape[1], itci_shape[2]])
@@ -246,17 +247,17 @@ class EntityLSTM(object):
                                                                                             self.training, initializer,
                                                                                             parameters)
         if parameters['use_attention']:
-            #state = final_states[-1]
-            #encoder_state = tf.concat(state, 1)
+            # state = final_states[-1]
+            # encoder_state = tf.concat(state, 1)
             encoder_state_fw, encoder_state_bw = final_states
             state_fw = encoder_state_fw[-1]
             state_bw = encoder_state_bw[-1]
             encoder_state = tf.concat([tf.concat(state_fw, 1),
                                        tf.concat(state_bw, 1)], 1)
             encoder_out, self.attention_weight = attention_decoder(token_lstm_output,
-                                                              encoder_state,
-                                                              parameters['attention_size'],
-                                                              LIMIT_SEQUENCE_LENGTH)
+                                                                   encoder_state,
+                                                                   parameters['attention_size'],
+                                                                   LIMIT_SEQUENCE_LENGTH)
         else:
             encoder_out = token_lstm_output
 
@@ -431,7 +432,75 @@ class EntityLSTM(object):
         print("dataset.vocabulary_size: {0}".format(metadata['num_of_token']))
         sess.run(self.token_embedding_weights.assign(initial_weights))
 
-    def load_model(self, pretrained_model_folder, sess):
+    def load_embeddings_from_pretrained_model(self, sess, pretrained_embedding_weights, embedding_type='token'):
+        if embedding_type == 'token':
+            embedding_weights = self.token_embedding_weights
+        elif embedding_type == 'character':
+            embedding_weights = self.character_embedding_weights
+
+        start_time = time.time()
+        print('Load {0} embeddings from pretrained model... '.format(embedding_type), end='', flush=True)
+        initial_weights = sess.run(embedding_weights.read_value())
+
+        for index in range(len(pretrained_embedding_weights)):
+            initial_weights[index] = pretrained_embedding_weights[index]
+        sess.run(embedding_weights.assign(initial_weights))
+        elapsed_time = time.time() - start_time
+        print('done ({0:.2f} seconds)'.format(elapsed_time))
+
+    def load_model(self, pretrained_model_folder, sess, metadata, parameters):
+        reload_char = metadata['prev_num_of_char'] != metadata['num_of_char']
+        reload_token = metadata['prev_num_of_token'] != metadata['num_of_token']
+
         pretrained_model_checkpoint_filepath = os.path.join(pretrained_model_folder, 'model.ckpt')
-        self.saver.restore(sess, pretrained_model_checkpoint_filepath)
+        if not reload_char and not reload_token:
+            self.saver.restore(sess, pretrained_model_checkpoint_filepath)
+        else:
+            var_list = tf.trainable_variables()
+            for idx, tensor in reversed(list(enumerate(var_list))):
+                if reload_char and tensor.name == 'character_embedding/character_embedding_weights:0':
+                    del var_list[idx]
+                if reload_token and tensor.name == 'token_embedding/token_embedding_weights:0':
+                    del var_list[idx]
+            embed_wo_saver = tf.train.Saver(var_list=var_list)
+            embed_wo_saver.restore(sess, pretrained_model_checkpoint_filepath)
+
+            init_var = []
+            graph = tf.Graph()
+            with graph.as_default():
+                local_sess = tf.Session()
+                with local_sess.as_default():
+                    if reload_char:
+                        with tf.variable_scope("character_embedding"):
+                            char_embed = tf.get_variable(
+                                "character_embedding_weights",
+                                shape=[metadata['prev_num_of_char'], parameters['character_embedding_dimension']],
+                                trainable=True)
+                        init_var.append(self.character_embedding_weights)
+                    if reload_token:
+                        with tf.variable_scope("token_embedding"):
+                            token_embed = tf.get_variable(
+                                "token_embedding_weights",
+                                shape=[metadata['prev_num_of_token'], parameters['token_embedding_dimension']],
+                                trainable=True)
+                        init_var.append(self.token_embedding_weights)
+                    embed_saver = tf.train.Saver()
+                    embed_saver.restore(local_sess, pretrained_model_checkpoint_filepath)
+                    if reload_char:
+                        character_embedding_weights = local_sess.run([char_embed])
+                    if reload_token:
+                        token_embedding_weights = local_sess.run([token_embed])
+
+            sess.run(tf.variables_initializer(init_var))
+
+            if reload_char:
+                self.load_embeddings_from_pretrained_model(sess, character_embedding_weights[0],
+                                                           embedding_type='character')
+            if reload_token:
+                self.load_pretrained_token_embeddings(sess, parameters, metadata)
+                self.load_embeddings_from_pretrained_model(sess, token_embedding_weights[0], embedding_type='token')
+
+            del character_embedding_weights
+            del token_embedding_weights
+
         return sess.run(self.transition_parameters)

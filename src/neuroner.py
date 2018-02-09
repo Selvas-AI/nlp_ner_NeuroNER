@@ -5,6 +5,7 @@ import matplotlib
 from tqdm import tqdm
 
 import preprocess
+from conlleval import evaluate_and_reports
 
 matplotlib.use('Agg')
 import sklearn
@@ -26,6 +27,7 @@ import pickle
 import collections
 from shutil import copyfile
 import copy
+from functools import partial
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
@@ -54,7 +56,7 @@ class NeuroNER(object):
             log_device_placement=False
         )
 
-        session_conf.gpu_options.per_process_gpu_memory_fraction = 0.9
+        session_conf.gpu_options.per_process_gpu_memory_fraction = 0.90
         sess = tf.Session(config=session_conf)
 
         with sess.as_default():
@@ -67,12 +69,15 @@ class NeuroNER(object):
 
         if mode == "train":
             if parameters['load_pretrained_model']:
-                self.transition_params_trained = model.load_model(parameters['pretrained_model_folder'], sess,  metadata, parameters)
+                self.transition_params_trained = model.load_model(parameters['pretrained_model_folder'], sess, metadata,
+                                                                  parameters)
             else:
                 model.load_pretrained_token_embeddings(sess, parameters, metadata)
-                self.transition_params_trained = np.random.rand(metadata['num_of_label'] + 2, metadata['num_of_label'] + 2)
+                self.transition_params_trained = np.random.rand(metadata['num_of_label'] + 2,
+                                                                metadata['num_of_label'] + 2)
         else:
-            self.transition_params_trained = model.load_model(parameters['pretrained_model_folder'], sess, metadata, parameters)
+            self.transition_params_trained = model.load_model(parameters['pretrained_model_folder'], sess, metadata,
+                                                              parameters)
 
         expanded_embedding = None
         if parameters['use_vocab_expansion'] and (parameters['mode'] == 'predict' or parameters['mode'] == 'test'):
@@ -105,7 +110,8 @@ class NeuroNER(object):
         for dataset_type, dataset_path in dataset_filepaths.items():
             data_queue[dataset_type] = DataQueue(self.metadata, dataset_path, self.parameters['batch_size'],
                                                  is_train=True if dataset_type == 'train' else False,
-                                                 use_process=True if dataset_type == 'train' else False,
+                                                 # use_process=True if dataset_type == 'train' else False,
+                                                 use_process=False,
                                                  expanded_embedding=self.expanded_embedding,
                                                  pad_constant_size=self.parameters['use_attention'])
         epoch_start_time = time.time()
@@ -137,8 +143,47 @@ class NeuroNER(object):
         batch_input = preprocess.pad_and_batch([model_input], 1, self.metadata, is_train=False,
                                                expanded_embedding=self.expanded_embedding,
                                                pad_constant_size=self.parameters['use_attention'])
-        _, prediction_labels_list = self._predict_core(batch_input[0])
-        return raw_token_sequence, extended_sequence, prediction_labels_list[0]
+        _, prediction_labels_list, decode_score_list = self._predict_core(batch_input[0])
+        return raw_token_sequence, extended_sequence, prediction_labels_list[0], decode_score_list[0]
+
+    @staticmethod
+    def batch_extract_feature(input, parameters, gazetteer, max_key_len, metadata, expanded_embedding):
+        token_sequence, raw_token_sequence, extended_sequence = preprocess.extract_feature(input,
+                                                                                           parameters[
+                                                                                               'tokenizer'],
+                                                                                           gazetteer,
+                                                                                           max_key_len)
+        model_input = preprocess.encode(metadata, token_sequence, extended_sequence,
+                                        expanded_embedding=expanded_embedding)
+        return raw_token_sequence, extended_sequence, model_input, raw_token_sequence
+
+    def predict_list(self, input_list, pool):
+        model_inputs = []
+        raw_token_sequence_list = []
+        extended_sequence_list = []
+
+        partial_parse_token = partial(NeuroNER.batch_extract_feature, parameters=self.parameters, gazetteer=self.gazetteer,
+                                      max_key_len=self.max_key_len, metadata=self.metadata,
+                                      expanded_embedding=self.expanded_embedding)
+        result = pool.map(partial_parse_token, input_list)
+
+        for raw_token_sequence, extended_sequence, model_input, raw_token_sequence in result:
+            # raw_token_sequence, extended_sequence, model_input, raw_token_sequence = result.next()
+            model_inputs.append(model_input)
+            raw_token_sequence_list.append(raw_token_sequence)
+            extended_sequence_list.append(extended_sequence)
+
+        batch_input_list = preprocess.pad_and_batch(model_inputs, self.parameters['batch_size'], self.metadata,
+                                                    is_train=False,
+                                                    expanded_embedding=self.expanded_embedding,
+                                                    pad_constant_size=self.parameters['use_attention'])
+        prediction_labels_list = []
+        decode_score_list = []
+        for batch_input in batch_input_list:
+            _, current_prediction_labels_list, current_decode_score_list = self._predict_core(batch_input)
+            prediction_labels_list.extend(current_prediction_labels_list)
+            decode_score_list.extend(current_decode_score_list)
+        return raw_token_sequence_list, extended_sequence_list, prediction_labels_list, decode_score_list
 
     def fit(self, dataset_filepaths):
         stats_graph_folder, experiment_timestamp = self._create_stats_graph_folder(self.parameters)
@@ -158,7 +203,6 @@ class NeuroNER(object):
         utils.create_folder_if_not_exists(model_folder)
         del self.metadata['prev_num_of_token']
         del self.metadata['prev_num_of_char']
-        self.metadata.write(model_folder)
 
         copyfile(self.parameters['ini_path'], os.path.join(model_folder, 'parameters.ini'))
 
@@ -212,7 +256,8 @@ class NeuroNER(object):
         for dataset_type, dataset_path in dataset_filepaths.items():
             data_queue[dataset_type] = DataQueue(self.metadata, dataset_path, self.parameters['batch_size'],
                                                  is_train=True if dataset_type == 'train' else False,
-                                                 use_process=True if dataset_type == 'train' else False,
+                                                 # use_process=True if dataset_type == 'train' else False,
+                                                 use_process=False,
                                                  pad_constant_size=self.parameters['use_attention'])
 
         first_step = True
@@ -259,6 +304,7 @@ class NeuroNER(object):
 
                 # Save model
                 self.model.saver.save(self.sess, os.path.join(model_folder, 'model_{0:05d}.ckpt'.format(accum_step)))
+                self.metadata.write(model_folder)
 
                 if self.parameters['enable_tensorbord']:
                     # Save TensorBoard logs
@@ -272,6 +318,12 @@ class NeuroNER(object):
                 if valid_f1_score > previous_best_valid_f1_score:
                     bad_counter = 0
                     previous_best_valid_f1_score = valid_f1_score
+                    ##
+                    self.model.saver.save(self.sess,
+                                          os.path.join(r'D:\tech\entity\NeuroNER\trained_models\exobrain',
+                                                       'model.ckpt'))
+                    self.metadata.write(r'D:\tech\entity\NeuroNER\trained_models\exobrain')
+                    ##
                 else:
                     bad_counter += 1
                 print("The last {0} epochs have not shown improvements on the validation set.".format(bad_counter))
@@ -375,18 +427,24 @@ class NeuroNER(object):
 
         predictions_list = []
         prediction_labels_list = []
+        decode_score_list = []
         for idx in range(batch_input['batch_size']):
             unary_scores = batch_unary_scores[idx]
+
+            unary_scores = unary_scores[:batch_input['seq_lengths'][idx] + 2]
+            unary_scores[:][batch_input['seq_lengths'][idx] + 1] = -1000
+            unary_scores[-1][-1] = 0
             predictions = batch_predictions[idx]
             if self.parameters['use_crf']:
-                predictions, _ = tf.contrib.crf.viterbi_decode(unary_scores, self.transition_params_trained)
+                predictions, decode_score = tf.contrib.crf.viterbi_decode(unary_scores, self.transition_params_trained)
                 predictions = predictions[1:batch_input['seq_lengths'][idx] + 1]
             else:
                 predictions = predictions[:batch_input['seq_lengths'][idx]].tolist()
 
+            decode_score_list.append(decode_score)
             predictions_list.append(predictions)
             prediction_labels_list.append([self.metadata['index_to_label'][prediction] for prediction in predictions])
-        return predictions_list, prediction_labels_list
+        return predictions_list, prediction_labels_list, decode_score_list
 
     def _prediction_step(self, data_queue, dataset_type, stats_graph_folder, train_step):
         all_predictions = []
@@ -399,36 +457,43 @@ class NeuroNER(object):
             batch_input = data_queue[dataset_type].next()
             if batch_input is None:
                 break
-            predictions_list, prediction_labels_list = self._predict_core(batch_input)
+            predictions_list, prediction_labels_list, _ = self._predict_core(batch_input)
             for idx in range(batch_input['batch_size']):
                 predictions = predictions_list[idx]
                 prediction_labels = prediction_labels_list[idx]
-                gold_labels = [self.metadata['index_to_label'][t] for t in
-                               batch_input['label_indices'][idx][:batch_input['seq_lengths'][idx]]]
+                if dataset_type == 'deploy':
+                    conll_text = batch_input['conll'][idx].split('\n')
+                    output_string = ""
+                    for line, prediction in zip(conll_text, prediction_labels):
+                        split_line = line.strip().split(' ')
+                        split_line.append(prediction)
+                        output_string += ' '.join(split_line) + '\n'
+                    output_file.write(output_string + '\n')
+                else:
+                    gold_labels = [self.metadata['index_to_label'][t] for t in
+                                   batch_input['label_indices'][idx][:batch_input['seq_lengths'][idx]]]
 
-                conll_text = batch_input['conll'][idx].split('\n')
-                output_string = ""
-                for line, prediction, gold_label in zip(conll_text, prediction_labels, gold_labels):
-                    split_line = line.strip().split(' ')
-                    gold_label_original = split_line[-1]
-                    assert (gold_label == gold_label_original)
-                    split_line.append(prediction)
-                    output_string += ' '.join(split_line) + '\n'
-                output_file.write(output_string + '\n')
+                    conll_text = batch_input['conll'][idx].split('\n')
+                    output_string = ""
+                    for line, prediction, gold_label in zip(conll_text, prediction_labels, gold_labels):
+                        split_line = line.strip().split(' ')
+                        gold_label_original = split_line[-1]
+                        assert (gold_label == gold_label_original)
+                        split_line.append(prediction)
+                        output_string += ' '.join(split_line) + '\n'
+                    output_file.write(output_string + '\n')
+                    all_y_true.extend(batch_input['label_indices'][idx][:batch_input['seq_lengths'][idx]])
 
                 all_predictions.extend(predictions)
-                all_y_true.extend(batch_input['label_indices'][idx][:batch_input['seq_lengths'][idx]])
+
             step += self.parameters['batch_size']
 
         output_file.close()
 
         if dataset_type != 'deploy':
             if self.parameters['main_evaluation_mode'] == 'conll':
-                conll_evaluation_script = os.path.join('.', 'conlleval')
                 conll_output_filepath = '{0}_conll_evaluation.txt'.format(output_filepath)
-                shell_command = 'perl {0} < {1} > {2}'.format(conll_evaluation_script, output_filepath,
-                                                              conll_output_filepath)
-                os.system(shell_command)
+                evaluate_and_reports(output_filepath, conll_output_filepath)
                 with open(conll_output_filepath, 'r') as f:
                     classification_report = f.read()
                     print(classification_report)

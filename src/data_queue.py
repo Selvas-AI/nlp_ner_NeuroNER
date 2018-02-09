@@ -47,8 +47,8 @@ class DataQueue(object):
         self._is_train = is_train
         self._expanded_embedding = expanded_embedding
         if self._is_train:
-            input_thread_num = 2
-            bucket_thread_num = 1
+            input_thread_num = 4
+            bucket_thread_num = 2
             self._bucket_cache_batch = 20
             self._queue_num_batch = 500
         else:
@@ -79,7 +79,7 @@ class DataQueue(object):
         return self._bucket_input_queue.get()
 
     def _FillInputQueue(self):
-        if not self._use_process:
+        if not self._use_process and jpype.isJVMStarted():
             jpype.attachThreadToJVM()
         file_list = list(glob.glob(self._data_path + "/*.txt"))
         while True:
@@ -185,10 +185,12 @@ class DataQueue(object):
 
     def __del__(self):
         for t in self._input_threads:
-            t.terminate()
+            if self._use_process:
+                t.terminate()
             t.join()
         for t in self._bucketing_threads:
-            t.terminate()
+            if self._use_process:
+                t.terminate()
             t.join()
         self._input_queue.close()
         self._bucket_input_queue.close()

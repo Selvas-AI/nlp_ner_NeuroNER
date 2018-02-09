@@ -62,8 +62,9 @@ def main():
                         line = line.strip("\n")
                         total_line += len(line)
                         try:
-                            tokens, extended_sequence, tags = neuroner.predict(line)
+                            tokens, extended_sequence, tags, score = neuroner.predict(line)
                         except Exception as e:
+                            print(str(e))
                             outfile.write(line + "\n")
                             continue
                         output = ""

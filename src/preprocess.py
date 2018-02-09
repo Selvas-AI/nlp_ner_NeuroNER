@@ -74,10 +74,12 @@ def pad_and_batch(inputs, batch_size, metadata, is_train=False, expanded_embeddi
                     utils.pad_list(element.token_indices, max_token_size, expanded_embedding["UNK"]))
         else:
             for element in current:
+                '''
                 if is_train:
                     for j, token_index in enumerate(element.token_indices):
                         if token_index in metadata['infrequent_token_indices'] and np.random.uniform() < 0.5:
                             element.token_indices[j] = PADDING_TOKEN_INDEX
+                '''
                 batch_data['token_indices'].append(
                     utils.pad_list(element.token_indices, max_token_size, PADDING_TOKEN_INDEX))
 

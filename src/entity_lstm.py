@@ -315,6 +315,7 @@ class EntityLSTM(object):
                 self.unary_scores = tf.concat([start_unary_scores, unary_scores_with_start_and_end, end_unary_scores],
                                               1)
 
+
                 start_index = num_of_label
                 end_index = num_of_label + 1
                 input_label_indices_flat_with_start_and_end = tf.concat(
@@ -361,8 +362,9 @@ class EntityLSTM(object):
                 correct_predictions = tf.equal(self.predictions, tf.argmax(input_label_indices_vector_oh, 2))
                 self.accuracy = tf.reduce_mean(tf.cast(correct_predictions, 'float'), name='accuracy')
 
-        self.define_training_procedure(parameters)
-        self.summary_op = tf.summary.merge_all()
+        if parameters['mode'] == 'train':
+            self.define_training_procedure(parameters)
+            self.summary_op = tf.summary.merge_all()
         self.saver = tf.train.Saver(max_to_keep=parameters['patience'] + 1)  # defaults to saving all variables
 
     def define_training_procedure(self, parameters):
@@ -499,8 +501,9 @@ class EntityLSTM(object):
             if reload_token:
                 self.load_pretrained_token_embeddings(sess, parameters, metadata)
                 self.load_embeddings_from_pretrained_model(sess, token_embedding_weights[0], embedding_type='token')
-
             del character_embedding_weights
             del token_embedding_weights
+            del local_sess
+            del graph
 
         return sess.run(self.transition_parameters)

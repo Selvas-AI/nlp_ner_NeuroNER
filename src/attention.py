@@ -6,12 +6,12 @@ from __future__ import print_function
 
 import tensorflow as tf
 from tensorflow.python.ops import array_ops
-from tensorflow.python.ops import rnn_cell_impl
 
-linear = rnn_cell_impl._linear
+try:
+    from tensorflow.contrib.rnn.python.ops.core_rnn_cell import _linear as linear
+except Exception:
+    from tensorflow.python.ops.rnn_cell_impl import _linear as linear
 
-
-# linear = tf.nn.rnn_cell._linear
 
 def attention_decoder(encoder_outputs_raw,
                       encoder_state,

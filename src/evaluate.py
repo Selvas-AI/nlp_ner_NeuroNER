@@ -7,6 +7,7 @@ import utils_plots
 import json
 import time
 import utils_nlp
+from conlleval import evaluate_and_reports
 
 
 def assess_model(y_pred, y_true, labels, target_names, labels_with_o, target_names_with_o, dataset_type, stats_graph_folder, epoch_number, parameters,
@@ -249,11 +250,8 @@ def evaluate_model(results, metadata, y_pred_all, y_true_all, stats_graph_folder
     for dataset_type in ['train', 'valid', 'test']:
         if dataset_type not in output_filepaths.keys():
             continue
-        conll_evaluation_script = os.path.join('.', 'conlleval')
         conll_output_filepath = '{0}_conll_evaluation.txt'.format(output_filepaths[dataset_type])
-        shell_command = 'perl {0} < {1} > {2}'.format(conll_evaluation_script, output_filepaths[dataset_type], conll_output_filepath)
-        print('shell_command: {0}'.format(shell_command))
-        os.system(shell_command)
+        evaluate_and_reports(output_filepaths[dataset_type], conll_output_filepath)
         conll_parsed_output = utils_nlp.get_parsed_conll_output(conll_output_filepath)
         results['epoch'][epoch_number][0][dataset_type]['conll'] = conll_parsed_output
         results['epoch'][epoch_number][0][dataset_type]['f1_conll'] = {}

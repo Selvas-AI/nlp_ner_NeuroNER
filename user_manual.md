@@ -163,19 +163,19 @@ $ python3.5 main.py --patience=10 --token_pretrained_embedding_filepath=""
 ```
 +------+-------+-------+-----+-----------+-------+---------+
 Token |  misc  | begin | end | kor_morph | space | IOB tag |
-제주항공	 test	  177	 181	   1	     0	     B-OG
-이	 test	  181	 182	   7	     1	      O
-허위	 test	  183	 185	   1	     1	      O
-할인	 test	  186	 188	   1	     0	      O
-광고	 test	  188	 190	   1	     0	      O
-로	 test	  190	 191	   7	     1	      O
-공정위	 test	  192	 195	   1	     0	     B-OG
-의	 test	  195	 196	   7	     1	      O
-시정	 test	  197	 199	   1	     0	      O
-명령	 test	  199	 201	   1	     0	      O
-을	 test	  201	 202	   7	     1	      O
-받았다  	 test  	  203	 206	   2	     0	      O
-.	 test	  206	 207	   20	     1	      O
+제주항공  test    177    181        1         0       B-OG
+이       test    181     182       7         1         O
+허위     test    183     185       1         1         O
+할인     test    186     188       1         0         O
+광고     test    188     190       1         0         O
+로       test    190     191       7         1         O
+공정위   test    192     195       1          0       B-OG
+의       test    195     196       7          1        O
+시정     test    197     199       1          0        O
+명령     test    199     201       1          0        O
+을       test    201     202       7          1        O
+받았다   test    203     206       2          0        O
+.       test     206    207       20          1        O
 
 ```
 

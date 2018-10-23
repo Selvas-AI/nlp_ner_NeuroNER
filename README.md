@@ -58,22 +58,25 @@ NeuroNER/
 ├── data/
 │   └── kor_ner/
 │       ├── train/
+│           └── train_korean.txt
 │       └── valid/
+│           └── valid_korean.txt
 ├── env/
 │   └── requirements.txt
 ├── ini/
 │   └── ner/
 │       └── parameters.ini
 ├── src/
+│   └── oktypy/
 │   ├── attention.py
 │   ├── bnlstm.py
 │   ├── conlleval.py
 │   ├── data_queue.py
 │   ├── entity_lstm.py
 │   ├── evaluate.py
+│   ├── kor_neuroner.py
 │   ├── main.py
 │   ├── metadata.py
-│   ├── kor_neuroner.py
 │   ├── parameters.ini
 │   ├── params.py
 │   ├── preprocess.py
@@ -82,7 +85,6 @@ NeuroNER/
 │   ├── utils_nlp.py
 │   └── utils_plot.py
 └── user_manual.md
-
 
 ```
 

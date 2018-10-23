@@ -5,7 +5,7 @@ import os
 import time
 import warnings
 
-from morph_analyzer.oktpy.twitter import TwitterMorphManager
+from oktpy.twitter import TwitterMorphManager
 from tqdm import tqdm
 
 import utils

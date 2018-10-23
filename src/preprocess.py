@@ -5,7 +5,7 @@ from collections import namedtuple
 import utils
 import utils_nlp
 from params import PADDING_LABEL_INDEX, PADDING_CHARACTER_INDEX, PADDING_TOKEN_INDEX, LIMIT_SEQUENCE_LENGTH
-from morph_analyzer.oktpy.twitter import TwitterMorphManager
+from oktpy.twitter import TwitterMorphManager
 
 ModelInput = namedtuple('ModelInput',
                         'token_indices character_indices label_indices extended_sequence conll token_lengths sequence_length')

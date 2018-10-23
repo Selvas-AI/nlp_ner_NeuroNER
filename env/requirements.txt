@@ -1,11 +1,6 @@
-networkx
 matplotlib
 scikit-learn
 scipy
-pycorenlp
 tqdm
-flask
-flask_restful
 JPype1
-colorama
-oktpy
+tensorflow

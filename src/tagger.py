@@ -5,14 +5,13 @@ import os
 import time
 import warnings
 
-from oktpy.twitter import TwitterMorphManager
+from morph_analyzer.oktpy.twitter import TwitterMorphManager
 from tqdm import tqdm
 
 import utils
 from metadata import Metadata
-from neuroner import NeuroNER
+from kor_neuroner import KorNeuroNER
 from params import Configuration
-from multiprocessing.pool import ThreadPool
 from multiprocessing.pool import Pool
 
 warnings.filterwarnings('ignore')
@@ -34,7 +33,7 @@ def main():
     parameters['batch_size'] = 128
     parameters['enable_tensorbord'] = False
     metadata = Metadata(parameters['pretrained_model_folder'], None, None, None)
-    neuroner = NeuroNER(parameters, metadata)
+    neuroner = KorNeuroNER(parameters, metadata)
     print('done ({0:.2f} seconds)'.format(time.time() - start_time))
 
     corpus_list = glob.iglob(cmd_arg.corpus_path + "/*.txt", recursive=True)
@@ -45,7 +44,6 @@ def main():
     output_file = open(output_path % output_index, "w", encoding='utf-8')
     write_count = 0
     pool = Pool(5)
-    #pool = ThreadPool(64)
     for file_path in tqdm(list(corpus_list)):
         remain_txt = ""
         with open(file_path, "r", encoding="utf-8") as input_file:
@@ -68,7 +66,6 @@ def main():
                     remain_txt += line_list[idx]
                     continue
                 index = 0
-                #output_file.write("[[{}, {}]]\n".format(score_list[idx], score))
                 for tok, extended, label in zip(raw_token_sequence, extended_sequence, label_sequence):
                     elem = "{} . {} {} {} {}\n".format(tok, index, index + len(tok),
                                                        " ".join([str(ex) for ex in extended]), label)

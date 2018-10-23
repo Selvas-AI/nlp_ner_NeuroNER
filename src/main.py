@@ -1,18 +1,15 @@
 # -*- coding: utf-8-*-
 import argparse
-import os
-import pickle
 import time
 import warnings
 
 import utils
 from params import Configuration
-from neuroner import NeuroNER
+from kor_neuroner import KorNeuroNER
 from metadata import Metadata
-from oktpy.twitter import TwitterMorphManager
 
 warnings.filterwarnings('ignore')
-TwitterMorphManager().morph_analyzer.pos("안녕하세요")
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -33,7 +30,6 @@ def main():
             raise Exception('train data path empty')
     elif parameters['mode'] == 'test':
         dataset_filepaths.pop('train', None)
-        #dataset_filepaths.pop('valid', None)
         if len(dataset_filepaths) == 0:
             raise Exception('test data path empty')
 
@@ -48,7 +44,7 @@ def main():
     else:
         metadata = Metadata(parameters['pretrained_model_folder'], None, None, None)
 
-    neuroner = NeuroNER(parameters, metadata)
+    neuroner = KorNeuroNER(parameters, metadata)
     print('done ({0:.2f} seconds)'.format(time.time() - start_time))
 
     if parameters['mode'] == 'train':
